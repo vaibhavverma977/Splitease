@@ -1,6 +1,7 @@
 // ============================
 //  SplitEase - app.js (v1)
 //  Offline-first expense splitting
+//  Full V1 with flexible splits & Overview chart
 // ============================
 
 // ---- DATA LAYER ----
@@ -8,7 +9,8 @@
 const STORAGE_KEY = 'splitEaseData';
 
 let groups = [];
-let currentGroupId = null; // null when on home view
+let currentGroupId = null;
+let editingExpenseId = null;
 
 // Load data from localStorage
 function loadData() {
@@ -22,18 +24,30 @@ function loadData() {
             }
         } catch (_) {}
     }
-    // If no data or corrupted, start with empty array
     groups = [];
 }
 
-// Save data to localStorage
 function saveData() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
 }
 
-// Helper: generate short unique ID
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+// Helper: format date for display
+function formatDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function getToday() {
+    const d = new Date();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${month}-${day}`;
 }
 
 // ---- VIEWS / NAVIGATION ----
@@ -99,7 +113,7 @@ function renderHome() {
     });
 }
 
-// ---- RENDER GROUP (all tabs) ----
+// ---- RENDER GROUP ----
 
 function renderGroup(groupId) {
     const group = groups.find(g => g.id === groupId);
@@ -108,22 +122,12 @@ function renderGroup(groupId) {
         return;
     }
 
-    // Update header title
     document.getElementById('group-title').textContent = group.name;
-
-    // Render members tab
     renderMembers(group);
-
-    // Render expenses tab
     renderExpenses(group);
-
-    // Render balances tab
+    renderOverview(group);
     renderBalances(group);
-
-    // Refresh the included members in expense modal (populate checkboxes and payer dropdown)
     populateExpenseModal(group);
-
-    // Show the first tab (members) by default
     switchTab('members');
 }
 
@@ -174,7 +178,6 @@ function addMember() {
     const group = groups.find(g => g.id === currentGroupId);
     if (!group) return;
 
-    // Check duplicate (case-insensitive)
     if (group.members && group.members.some(m => m.toLowerCase() === name.toLowerCase())) {
         errorEl.textContent = 'Duplicate member name.';
         errorEl.classList.remove('hidden');
@@ -193,10 +196,22 @@ function removeMember(groupId, memberName) {
     const group = groups.find(g => g.id === groupId);
     if (!group) return;
 
-    // Remove member from the group's members list ONLY.
-    // Historical expenses are never modified – payer and included lists remain unchanged.
-    group.members = group.members.filter(m => m !== memberName);
+    // Check if member is used in any expense
+    const isUsed = group.expenses.some(exp => {
+        if (exp.payer === memberName) return true;
+        if (exp.splitType === 'equal') {
+            return (exp.included || []).includes(memberName);
+        } else {
+            return exp.splits && exp.splits[memberName] !== undefined;
+        }
+    });
 
+    if (isUsed) {
+        alert('This member is used in existing expenses. Remove or edit those expenses first.');
+        return;
+    }
+
+    group.members = group.members.filter(m => m !== memberName);
     saveData();
     renderGroup(groupId);
 }
@@ -214,8 +229,12 @@ function renderExpenses(group) {
     }
     empty.style.display = 'none';
 
-    // Sort expenses by creation time (id is timestamp-based)
-    const sorted = [...group.expenses].sort((a, b) => (a.id < b.id ? -1 : 1));
+    const sorted = [...group.expenses].sort((a, b) => {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        return (b.id || '').localeCompare(a.id || '');
+    });
 
     sorted.forEach(exp => {
         const item = document.createElement('div');
@@ -223,25 +242,45 @@ function renderExpenses(group) {
 
         const info = document.createElement('div');
         info.className = 'expense-info';
-        const desc = document.createElement('span');
+
+        const desc = document.createElement('div');
         desc.className = 'expense-desc';
         desc.textContent = exp.description;
-        const details = document.createElement('span');
+
+        const details = document.createElement('div');
         details.className = 'expense-details';
-        const includedStr = exp.included && exp.included.length > 0 ? exp.included.join(', ') : 'No one';
-        details.textContent = `Paid by ${exp.payer} · ₹${Number(exp.amount).toFixed(2)} · Split ${exp.included.length} ways`;
+        const payer = exp.payer || 'Unknown';
+        const dateStr = exp.date ? formatDate(exp.date) : '';
+        const datePart = dateStr ? ` · ${dateStr}` : '';
+        let splitTypeLabel = 'Equal';
+        if (exp.splitType === 'percentage') splitTypeLabel = 'Percentage';
+        else if (exp.splitType === 'custom') splitTypeLabel = 'Custom';
+        details.innerHTML = `
+            <span>Paid by ${payer}${datePart}</span>
+            <span class="split-type-badge">${splitTypeLabel}</span>
+        `;
 
         info.appendChild(desc);
         info.appendChild(details);
 
-        const actions = document.createElement('div');
-        actions.className = 'expense-actions';
         const amountSpan = document.createElement('span');
         amountSpan.className = 'expense-amount';
         amountSpan.textContent = `₹${Number(exp.amount).toFixed(2)}`;
 
+        const actions = document.createElement('div');
+        actions.className = 'expense-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.textContent = '✎';
+        editBtn.setAttribute('aria-label', 'Edit expense');
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openEditExpenseModal(group.id, exp.id);
+        });
+
         const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'delete-expense-btn';
+        deleteBtn.className = 'delete-btn';
         deleteBtn.textContent = '✕';
         deleteBtn.setAttribute('aria-label', 'Delete expense');
         deleteBtn.addEventListener('click', (e) => {
@@ -251,31 +290,83 @@ function renderExpenses(group) {
             }
         });
 
-        actions.appendChild(amountSpan);
+        actions.appendChild(editBtn);
         actions.appendChild(deleteBtn);
 
+        const rightSide = document.createElement('div');
+        rightSide.style.display = 'flex';
+        rightSide.style.alignItems = 'center';
+        rightSide.style.gap = '8px';
+        rightSide.appendChild(amountSpan);
+        rightSide.appendChild(actions);
+
         item.appendChild(info);
-        item.appendChild(actions);
+        item.appendChild(rightSide);
         container.appendChild(item);
     });
+}
+
+function openEditExpenseModal(groupId, expenseId) {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+    const expense = group.expenses.find(e => e.id === expenseId);
+    if (!expense) return;
+
+    editingExpenseId = expenseId;
+    document.getElementById('expense-modal-title').textContent = 'Edit Expense';
+    document.getElementById('btn-confirm-expense').textContent = 'Update Expense';
+
+    // Fill fields
+    document.getElementById('input-expense-desc').value = expense.description || '';
+    document.getElementById('input-expense-amount').value = expense.amount || '';
+    document.getElementById('input-expense-date').value = expense.date || getToday();
+    document.getElementById('input-expense-notes').value = expense.notes || '';
+
+    // Payer
+    const payerSelect = document.getElementById('input-expense-payer');
+    payerSelect.value = expense.payer || '';
+
+    // Included checkboxes (for equal or just to show)
+    const includedMembers = expense.included || [];
+    const checkboxes = document.querySelectorAll('#expense-included-list input[type="checkbox"]');
+    checkboxes.forEach(cb => {
+        cb.checked = includedMembers.includes(cb.value);
+    });
+
+    // Split type
+    const splitType = expense.splitType || 'equal';
+    document.getElementById('input-split-type').value = splitType;
+
+    // Render split inputs based on split type and data
+    renderSplitInputs(group, expense);
+
+    // Show the modal
+    openModal('modal-add-expense');
 }
 
 function addExpense() {
     const descInput = document.getElementById('input-expense-desc');
     const amountInput = document.getElementById('input-expense-amount');
+    const dateInput = document.getElementById('input-expense-date');
     const payerSelect = document.getElementById('input-expense-payer');
+    const splitTypeSelect = document.getElementById('input-split-type');
+    const notesInput = document.getElementById('input-expense-notes');
     const checkboxes = document.querySelectorAll('#expense-included-list input[type="checkbox"]');
-    const errorEl = document.getElementById('expense-error');
+    const errorEl = document.getElementById('split-error');
 
     const description = descInput.value.trim();
     const amount = parseFloat(amountInput.value);
+    const date = dateInput.value || getToday();
     const payer = payerSelect.value;
+    const splitType = splitTypeSelect.value;
+    const notes = notesInput.value.trim();
+
     const included = [];
     checkboxes.forEach(cb => {
         if (cb.checked) included.push(cb.value);
     });
 
-    // Validations
+    // Basic validations
     if (!description) {
         errorEl.textContent = 'Please enter a description.';
         errorEl.classList.remove('hidden');
@@ -297,36 +388,94 @@ function addExpense() {
         return;
     }
 
-    errorEl.classList.add('hidden');
-
     const group = groups.find(g => g.id === currentGroupId);
     if (!group) return;
 
-    if (!group.expenses) group.expenses = [];
-
-    const newExpense = {
-        id: generateId(),
-        description: description,
-        amount: amount,
-        payer: payer,
-        included: included
+    // Build expense object
+    let expenseData = {
+        description,
+        amount,
+        date,
+        payer,
+        splitType,
+        notes
     };
 
-    group.expenses.push(newExpense);
-    saveData();
-
-    // Reset modal fields
-    descInput.value = '';
-    amountInput.value = '';
-    // Reset checkboxes: uncheck all
-    checkboxes.forEach(cb => cb.checked = false);
-    // Reset payer to first member or empty
-    if (group.members && group.members.length > 0) {
-        payerSelect.value = group.members[0];
+    if (splitType === 'equal') {
+        expenseData.included = included;
     } else {
-        payerSelect.value = '';
+        // Read split inputs
+        const splitInputs = document.querySelectorAll('.split-input-row');
+        const splits = {};
+        let total = 0;
+        let valid = true;
+        let errorMsg = '';
+
+        splitInputs.forEach(row => {
+            const member = row.dataset.member;
+            const input = row.querySelector('input');
+            const val = parseFloat(input.value);
+            if (!isNaN(val) && val >= 0) {
+                splits[member] = val;
+                total += val;
+            } else {
+                valid = false;
+                errorMsg = `Invalid value for ${member}.`;
+            }
+        });
+
+        if (!valid) {
+            errorEl.textContent = errorMsg;
+            errorEl.classList.remove('hidden');
+            return;
+        }
+
+        if (splitType === 'percentage') {
+            if (Math.abs(total - 100) > 0.001) {
+                errorEl.textContent = `Total percentage must equal 100% (current: ${total.toFixed(2)}%)`;
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            if (Object.values(splits).every(v => v === 0)) {
+                errorEl.textContent = 'At least one person must have a positive percentage.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            expenseData.splits = splits;
+        } else if (splitType === 'custom') {
+            if (Math.abs(total - amount) > 0.001) {
+                errorEl.textContent = `Total custom amounts (₹${total.toFixed(2)}) must equal ₹${amount.toFixed(2)}.`;
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            if (Object.values(splits).every(v => v === 0)) {
+                errorEl.textContent = 'At least one person must have a positive amount.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            expenseData.splits = splits;
+        }
     }
 
+    errorEl.classList.add('hidden');
+
+    if (editingExpenseId) {
+        // Update existing expense
+        const index = group.expenses.findIndex(e => e.id === editingExpenseId);
+        if (index !== -1) {
+            const oldExp = group.expenses[index];
+            expenseData.id = oldExp.id;
+            const updated = { ...oldExp, ...expenseData };
+            group.expenses[index] = updated;
+        }
+        editingExpenseId = null;
+    } else {
+        expenseData.id = generateId();
+        if (!group.expenses) group.expenses = [];
+        group.expenses.push(expenseData);
+    }
+
+    saveData();
     closeModal('modal-add-expense');
     renderGroup(currentGroupId);
 }
@@ -337,6 +486,125 @@ function deleteExpense(groupId, expenseId) {
     group.expenses = group.expenses.filter(e => e.id !== expenseId);
     saveData();
     renderGroup(groupId);
+}
+
+// ---- OVERVIEW TAB ----
+
+function renderOverview(group) {
+    const container = document.getElementById('pie-chart');
+    const legendContainer = document.getElementById('chart-legend');
+    const breakdownContainer = document.getElementById('member-breakdown');
+    const totalSpan = document.getElementById('total-spending');
+    const empty = document.getElementById('overview-empty');
+
+    // Compute spending by member
+    const spending = calculateSpendingByMember(group);
+    const total = Object.values(spending).reduce((sum, val) => sum + val, 0);
+
+    totalSpan.textContent = `₹${total.toFixed(2)}`;
+
+    if (total === 0 || !group.members || group.members.length === 0) {
+        empty.style.display = 'block';
+        container.innerHTML = '';
+        legendContainer.innerHTML = '';
+        breakdownContainer.innerHTML = '';
+        return;
+    }
+    empty.style.display = 'none';
+
+    // Build pie chart (SVG)
+    const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+    const membersWithSpending = group.members.filter(m => spending[m] && spending[m] > 0);
+    const totalSpending = total;
+
+    // Prepare data for slices
+    const slices = membersWithSpending.map((member, index) => {
+        const value = spending[member];
+        const percentage = (value / totalSpending) * 100;
+        const color = colors[index % colors.length];
+        return { member, value, percentage, color };
+    });
+
+    // Generate SVG pie chart
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+
+    let startAngle = -90; // start at top (12 o'clock)
+
+    slices.forEach(slice => {
+        const angle = (slice.percentage / 100) * 360;
+        const endAngle = startAngle + angle;
+        const radStart = (startAngle * Math.PI) / 180;
+        const radEnd = (endAngle * Math.PI) / 180;
+        const x1 = 50 + 40 * Math.cos(radStart);
+        const y1 = 50 + 40 * Math.sin(radStart);
+        const x2 = 50 + 40 * Math.cos(radEnd);
+        const y2 = 50 + 40 * Math.sin(radEnd);
+        const largeArc = angle > 180 ? 1 : 0;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const d = `M 50 50 L ${x1} ${y1} A 40 40 0 ${largeArc} 1 ${x2} ${y2} Z`;
+        path.setAttribute('d', d);
+        path.setAttribute('fill', slice.color);
+        path.setAttribute('stroke', '#fff');
+        path.setAttribute('stroke-width', '1');
+        svg.appendChild(path);
+
+        startAngle = endAngle;
+    });
+
+    // Add a small white circle in the center for donut effect (optional)
+    const centerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    centerCircle.setAttribute('cx', '50');
+    centerCircle.setAttribute('cy', '50');
+    centerCircle.setAttribute('r', '20');
+    centerCircle.setAttribute('fill', '#ffffff');
+    svg.appendChild(centerCircle);
+
+    container.innerHTML = '';
+    container.appendChild(svg);
+
+    // Legend
+    legendContainer.innerHTML = '';
+    slices.forEach(slice => {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        const colorBox = document.createElement('span');
+        colorBox.className = 'legend-color';
+        colorBox.style.backgroundColor = slice.color;
+        const label = document.createElement('span');
+        label.textContent = `${slice.member} (₹${slice.value.toFixed(2)})`;
+        item.appendChild(colorBox);
+        item.appendChild(label);
+        legendContainer.appendChild(item);
+    });
+
+    // Breakdown list
+    breakdownContainer.innerHTML = '';
+    group.members.forEach(member => {
+        const amount = spending[member] || 0;
+        const percent = total > 0 ? (amount / total) * 100 : 0;
+        const item = document.createElement('div');
+        item.className = 'breakdown-item';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.textContent = member;
+        const amountSpan = document.createElement('span');
+        amountSpan.className = 'amount';
+        amountSpan.textContent = `₹${amount.toFixed(2)}`;
+        const percentSpan = document.createElement('span');
+        percentSpan.className = 'percent';
+        percentSpan.textContent = `${percent.toFixed(1)}%`;
+        item.appendChild(nameSpan);
+        const right = document.createElement('span');
+        right.appendChild(amountSpan);
+        right.appendChild(document.createTextNode(' '));
+        right.appendChild(percentSpan);
+        item.appendChild(right);
+        breakdownContainer.appendChild(item);
+    });
 }
 
 // ---- BALANCES TAB ----
@@ -353,16 +621,20 @@ function renderBalances(group) {
         return;
     }
 
-    // Calculate balances
     const balances = calculateBalances(group);
 
-    // Display each member's net balance
-    const memberList = group.members;
-    memberList.forEach(member => {
+    const sortedMembers = [...group.members].sort((a, b) => {
+        return (balances[b]?.net || 0) - (balances[a]?.net || 0);
+    });
+
+    sortedMembers.forEach(member => {
         const data = balances[member];
         if (!data) return;
         const item = document.createElement('div');
         item.className = 'balance-item';
+
+        const row = document.createElement('div');
+        row.className = 'balance-row';
         const nameSpan = document.createElement('span');
         nameSpan.className = 'name';
         nameSpan.textContent = member;
@@ -381,12 +653,22 @@ function renderBalances(group) {
             netSpan.textContent = '₹0.00';
         }
 
-        item.appendChild(nameSpan);
-        item.appendChild(netSpan);
+        row.appendChild(nameSpan);
+        row.appendChild(netSpan);
+
+        const details = document.createElement('div');
+        details.className = 'balance-details';
+        details.innerHTML = `
+            <span>Paid: ₹${data.paid.toFixed(2)}</span>
+            <span>Share: ₹${data.share.toFixed(2)}</span>
+        `;
+
+        item.appendChild(row);
+        item.appendChild(details);
         container.appendChild(item);
     });
 
-    // Calculate settlement
+    // Settlement
     const settlement = calculateSettlement(group);
     if (settlement.length === 0) {
         const msg = document.createElement('div');
@@ -410,10 +692,33 @@ function renderBalances(group) {
     }
 }
 
-// ---- BALANCE CALCULATION ----
+// ---- CALCULATION FUNCTIONS ----
+
+function calculateExpenseShares(expense) {
+    // Returns an object { member: share }
+    const amount = expense.amount;
+    const splitType = expense.splitType || 'equal';
+    let shares = {};
+
+    if (splitType === 'equal') {
+        const included = expense.included || [];
+        if (included.length === 0) return {};
+        const perPerson = amount / included.length;
+        included.forEach(person => {
+            shares[person] = perPerson;
+        });
+    } else if (splitType === 'percentage' || splitType === 'custom') {
+        shares = expense.splits || {};
+        // Ensure amounts are numbers
+        Object.keys(shares).forEach(key => {
+            shares[key] = Number(shares[key]);
+        });
+    }
+
+    return shares;
+}
 
 function calculateBalances(group) {
-    // Initialize all members with zero
     const balances = {};
     if (group.members) {
         group.members.forEach(m => {
@@ -426,27 +731,21 @@ function calculateBalances(group) {
     group.expenses.forEach(exp => {
         const amount = exp.amount;
         const payer = exp.payer;
-        const included = exp.included || [];
+        const shares = calculateExpenseShares(exp);
 
-        // Only if included has at least one person
-        if (included.length === 0) return;
-
-        const sharePerPerson = amount / included.length;
-
-        // Payer: add full amount to paid
+        // Add full amount to payer
         if (balances[payer]) {
             balances[payer].paid += amount;
         }
 
-        // Each included person owes share (including payer, but net will be paid - share)
-        included.forEach(person => {
+        // Add shares
+        Object.keys(shares).forEach(person => {
             if (balances[person]) {
-                balances[person].share += sharePerPerson;
+                balances[person].share += shares[person];
             }
         });
     });
 
-    // Compute net: paid - share
     Object.keys(balances).forEach(m => {
         balances[m].net = balances[m].paid - balances[m].share;
     });
@@ -454,12 +753,9 @@ function calculateBalances(group) {
     return balances;
 }
 
-// ---- SETTLEMENT CALCULATION ----
-
 function calculateSettlement(group) {
     const balances = calculateBalances(group);
     const members = group.members || [];
-    // Separate creditors (net > 0) and debtors (net < 0)
     const creditors = [];
     const debtors = [];
     members.forEach(m => {
@@ -467,11 +763,10 @@ function calculateSettlement(group) {
         if (net > 0.005) {
             creditors.push({ name: m, amount: net });
         } else if (net < -0.005) {
-            debtors.push({ name: m, amount: -net }); // positive amount owed
+            debtors.push({ name: m, amount: -net });
         }
     });
 
-    // Sort by amount descending (optional)
     creditors.sort((a, b) => b.amount - a.amount);
     debtors.sort((a, b) => b.amount - a.amount);
 
@@ -497,13 +792,29 @@ function calculateSettlement(group) {
     return settlements;
 }
 
-// ---- POPULATE EXPENSE MODAL ----
+function calculateSpendingByMember(group) {
+    const spending = {};
+    if (group.members) {
+        group.members.forEach(m => spending[m] = 0);
+    }
+    if (!group.expenses) return spending;
+
+    group.expenses.forEach(exp => {
+        const payer = exp.payer;
+        if (spending[payer] !== undefined) {
+            spending[payer] += exp.amount;
+        }
+    });
+
+    return spending;
+}
+
+// ---- POPULATE EXPENSE MODAL (for new expense) ----
 
 function populateExpenseModal(group) {
     const payerSelect = document.getElementById('input-expense-payer');
     const includedContainer = document.getElementById('expense-included-list');
 
-    // Clear previous options
     payerSelect.innerHTML = '';
     includedContainer.innerHTML = '';
 
@@ -514,7 +825,6 @@ function populateExpenseModal(group) {
         return;
     }
 
-    // Payer dropdown
     members.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m;
@@ -523,17 +833,181 @@ function populateExpenseModal(group) {
     });
     payerSelect.value = members[0] || '';
 
-    // Included checkboxes
     members.forEach(m => {
         const label = document.createElement('label');
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.value = m;
-        cb.checked = true; // by default all selected
+        cb.checked = true;
         label.appendChild(cb);
         label.appendChild(document.createTextNode(m));
         includedContainer.appendChild(label);
     });
+
+    includedContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            renderSplitInputs(group, null);
+        });
+    });
+
+    document.getElementById('input-expense-date').value = getToday();
+    document.getElementById('input-split-type').value = 'equal';
+    renderSplitInputs(group, null);
+}
+
+// ---- RENDER SPLIT INPUTS ----
+
+function renderSplitInputs(group, expenseData) {
+    const splitType = document.getElementById('input-split-type').value;
+    const container = document.getElementById('split-inputs-container');
+    const checkboxes = document.querySelectorAll('#expense-included-list input[type="checkbox"]');
+    const included = [];
+    checkboxes.forEach(cb => {
+        if (cb.checked) included.push(cb.value);
+    });
+
+    container.innerHTML = '';
+    const errorEl = document.getElementById('split-error');
+    const infoEl = document.getElementById('split-info');
+    errorEl.classList.add('hidden');
+    infoEl.classList.add('hidden');
+
+    if (included.length === 0) {
+        container.innerHTML = '<div style="font-size:13px;color:#94a3b8;">Select at least one member.</div>';
+        return;
+    }
+
+    if (splitType === 'equal') {
+        container.innerHTML = '<div style="font-size:13px;color:#64748b;">Equal split among selected members.</div>';
+        return;
+    }
+
+    const amountInput = document.getElementById('input-expense-amount');
+    const totalAmount = parseFloat(amountInput.value) || 0;
+    const splits = expenseData?.splits || {};
+
+    included.forEach(member => {
+        const row = document.createElement('div');
+        row.className = 'split-input-row';
+        row.dataset.member = member;
+
+        const label = document.createElement('span');
+        label.className = 'member-label';
+        label.textContent = member;
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = '0.01';
+        input.min = '0';
+        input.placeholder = splitType === 'percentage' ? '%' : '₹';
+
+        // Pre-fill
+        if (expenseData && splits[member] !== undefined) {
+            input.value = splits[member];
+        } else if (splitType === 'percentage') {
+            input.value = (100 / included.length).toFixed(2);
+        } else if (splitType === 'custom' && totalAmount > 0) {
+            input.value = (totalAmount / included.length).toFixed(2);
+        } else {
+            input.value = '0';
+        }
+
+        input.addEventListener('input', () => {
+            validateSplitInputs();
+        });
+
+        const suffix = document.createElement('span');
+        suffix.className = 'suffix';
+        suffix.textContent = splitType === 'percentage' ? '%' : '₹';
+
+        row.appendChild(label);
+        row.appendChild(input);
+        row.appendChild(suffix);
+        container.appendChild(row);
+    });
+
+    validateSplitInputs();
+
+    // Re-validate on amount change for custom/percentage
+    amountInput.addEventListener('input', validateSplitInputs);
+}
+
+function validateSplitInputs() {
+    const splitType = document.getElementById('input-split-type').value;
+    const errorEl = document.getElementById('split-error');
+    const infoEl = document.getElementById('split-info');
+    const rows = document.querySelectorAll('.split-input-row');
+    const amountInput = document.getElementById('input-expense-amount');
+    const totalAmount = parseFloat(amountInput.value) || 0;
+
+    if (splitType === 'equal' || rows.length === 0) {
+        errorEl.classList.add('hidden');
+        infoEl.classList.add('hidden');
+        return;
+    }
+
+    let total = 0;
+    let valid = true;
+    let errorMsg = '';
+    const values = {};
+    rows.forEach(row => {
+        const member = row.dataset.member;
+        const input = row.querySelector('input');
+        const val = parseFloat(input.value);
+        if (!isNaN(val) && val >= 0) {
+            values[member] = val;
+            total += val;
+        } else {
+            valid = false;
+            errorMsg = 'Invalid value in one of the fields.';
+        }
+    });
+
+    if (!valid) {
+        errorEl.textContent = errorMsg;
+        errorEl.classList.remove('hidden');
+        infoEl.classList.add('hidden');
+        return;
+    }
+
+    let infoText = '';
+    let isError = false;
+
+    if (splitType === 'percentage') {
+        if (Math.abs(total - 100) > 0.001) {
+            isError = true;
+            errorEl.textContent = `Total percentage must equal 100% (current: ${total.toFixed(2)}%)`;
+            errorEl.classList.remove('hidden');
+        } else {
+            errorEl.classList.add('hidden');
+            const perPerson = Object.keys(values).map(member => {
+                const pct = values[member];
+                const amt = (pct / 100) * totalAmount;
+                return { member, pct, amt };
+            });
+            infoText = perPerson.map(p => `${p.member}: ₹${p.amt.toFixed(2)} (${p.pct.toFixed(2)}%)`).join(' · ');
+            infoEl.textContent = infoText;
+            infoEl.className = 'split-info valid';
+            infoEl.classList.remove('hidden');
+        }
+    } else if (splitType === 'custom') {
+        if (Math.abs(total - totalAmount) > 0.001) {
+            isError = true;
+            errorEl.textContent = `Total custom amounts (₹${total.toFixed(2)}) must equal expense amount (₹${totalAmount.toFixed(2)}).`;
+            errorEl.classList.remove('hidden');
+            infoEl.classList.add('hidden');
+        } else {
+            errorEl.classList.add('hidden');
+            infoText = `Total: ₹${total.toFixed(2)} ✓`;
+            infoEl.textContent = infoText;
+            infoEl.className = 'split-info valid';
+            infoEl.classList.remove('hidden');
+        }
+    }
+
+    if (isError) {
+        infoEl.classList.add('hidden');
+    }
 }
 
 // ---- MODAL HELPERS ----
@@ -544,22 +1018,29 @@ function openModal(modalId) {
 
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('open');
+    editingExpenseId = null;
+    document.getElementById('expense-modal-title').textContent = 'Add Expense';
+    document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
 }
 
 // ---- TAB SWITCHING ----
 
 function switchTab(tabName) {
-    // Update tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     document.querySelector(`.tab-btn[data-tab="${tabName}"]`).classList.add('active');
 
-    // Update panels
     document.querySelectorAll('.tab-panel').forEach(panel => {
         panel.classList.remove('active');
     });
     document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // If overview tab, re-render to update chart
+    if (tabName === 'overview') {
+        const group = groups.find(g => g.id === currentGroupId);
+        if (group) renderOverview(group);
+    }
 }
 
 // ---- EVENT BINDING ----
@@ -583,8 +1064,12 @@ function init() {
             errorEl.classList.remove('hidden');
             return;
         }
+        if (groups.some(g => g.name.toLowerCase() === name.toLowerCase())) {
+            errorEl.textContent = 'A group with this name already exists.';
+            errorEl.classList.remove('hidden');
+            return;
+        }
         errorEl.classList.add('hidden');
-        // Create group
         const newGroup = {
             id: generateId(),
             name: name,
@@ -595,12 +1080,31 @@ function init() {
         saveData();
         closeModal('modal-create-group');
         renderHome();
-        // Optionally open group automatically? We'll just stay on home.
     });
 
     // --- Back to home ---
     document.getElementById('btn-back').addEventListener('click', () => {
         showHomeView();
+    });
+
+    // --- Rename group ---
+    document.getElementById('btn-rename-group').addEventListener('click', () => {
+        const group = groups.find(g => g.id === currentGroupId);
+        if (!group) return;
+        const newName = prompt('Enter new group name:', group.name);
+        if (newName === null) return;
+        const trimmed = newName.trim();
+        if (!trimmed) {
+            alert('Group name cannot be empty.');
+            return;
+        }
+        if (groups.some(g => g.id !== currentGroupId && g.name.toLowerCase() === trimmed.toLowerCase())) {
+            alert('A group with this name already exists.');
+            return;
+        }
+        group.name = trimmed;
+        saveData();
+        renderGroup(currentGroupId);
     });
 
     // --- Delete group ---
@@ -627,16 +1131,44 @@ function init() {
             alert('Please add members first.');
             return;
         }
-        // Populate modal with current members
+        editingExpenseId = null;
+        document.getElementById('expense-modal-title').textContent = 'Add Expense';
+        document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
         populateExpenseModal(group);
-        // Clear previous values
         document.getElementById('input-expense-desc').value = '';
         document.getElementById('input-expense-amount').value = '';
-        document.getElementById('expense-error').classList.add('hidden');
+        document.getElementById('input-expense-notes').value = '';
+        document.getElementById('split-error').classList.add('hidden');
+        document.getElementById('split-info').classList.add('hidden');
+        document.getElementById('input-split-type').value = 'equal';
+        renderSplitInputs(group, null);
         openModal('modal-add-expense');
     });
 
     document.getElementById('btn-confirm-expense').addEventListener('click', addExpense);
+
+    // --- Split type change ---
+    document.getElementById('input-split-type').addEventListener('change', () => {
+        document.getElementById('split-error').classList.add('hidden');
+        document.getElementById('split-info').classList.add('hidden');
+        const group = groups.find(g => g.id === currentGroupId);
+        if (group) {
+            let expenseData = null;
+            if (editingExpenseId) {
+                const exp = group.expenses.find(e => e.id === editingExpenseId);
+                if (exp) expenseData = exp;
+            }
+            renderSplitInputs(group, expenseData);
+        }
+    });
+
+    // --- Amount input changes trigger validation ---
+    document.getElementById('input-expense-amount').addEventListener('input', () => {
+        const splitType = document.getElementById('input-split-type').value;
+        if (splitType === 'custom' || splitType === 'percentage') {
+            validateSplitInputs();
+        }
+    });
 
     // --- Modal close buttons ---
     document.querySelectorAll('.modal-close').forEach(btn => {
@@ -651,6 +1183,9 @@ function init() {
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
                 overlay.classList.remove('open');
+                editingExpenseId = null;
+                document.getElementById('expense-modal-title').textContent = 'Add Expense';
+                document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
             }
         });
     });
@@ -665,9 +1200,6 @@ function init() {
 
     // --- Initial render ---
     renderHome();
-
-    // If there is a currentGroupId from previous session? We'll just start at home.
-    // But we can try to open last group? Not needed.
 }
 
 // ---- START ----

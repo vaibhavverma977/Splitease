@@ -99,16 +99,38 @@ body {
     background: #eef2ff;
 }
 
+.group-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    justify-content: center;
+}
+
 .group-title {
     font-size: 18px;
     font-weight: 600;
     color: #0f172a;
-    flex: 1;
-    text-align: center;
-    margin: 0 8px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.rename-btn {
+    background: none;
+    border: none;
+    font-size: 16px;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: background 0.1s;
+}
+
+.rename-btn:active {
+    background: #eef2ff;
+    color: #4f46e5;
 }
 
 .delete-group-btn {
@@ -400,6 +422,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    flex: 1;
+    min-width: 0;
 }
 
 .expense-desc {
@@ -410,30 +434,47 @@ body {
 .expense-details {
     font-size: 13px;
     color: #64748b;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+}
+
+.expense-details .split-type-badge {
+    background: #e2e8f0;
+    padding: 0 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #334155;
 }
 
 .expense-amount {
     font-weight: 600;
     font-size: 16px;
     color: #0f172a;
+    white-space: nowrap;
 }
 
 .expense-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    margin-left: 8px;
 }
 
-.delete-expense-btn {
+.expense-actions button {
     background: none;
     border: none;
-    color: #94a3b8;
     font-size: 16px;
+    color: #94a3b8;
     cursor: pointer;
     padding: 4px;
+    transition: color 0.1s;
 }
 
-.delete-expense-btn:active {
+.expense-actions .edit-btn:active {
+    color: #4f46e5;
+}
+.expense-actions .delete-btn:active {
     color: #ef4444;
 }
 
@@ -452,6 +493,101 @@ body {
     background: #e2e8f0;
 }
 
+/* ===== OVERVIEW ===== */
+.overview-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.overview-total {
+    text-align: center;
+    padding: 12px;
+    background: #f1f5f9;
+    border-radius: 12px;
+}
+
+.total-label {
+    display: block;
+    font-size: 14px;
+    color: #64748b;
+}
+
+.total-amount {
+    font-size: 28px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.chart-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+}
+
+.pie-chart {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    position: relative;
+    overflow: hidden;
+}
+
+.pie-chart svg {
+    width: 100%;
+    height: 100%;
+}
+
+.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 16px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.legend-color {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+}
+
+.member-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.breakdown-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.breakdown-item .name {
+    font-weight: 500;
+}
+
+.breakdown-item .amount {
+    font-weight: 500;
+}
+
+.breakdown-item .percent {
+    color: #64748b;
+}
+
 /* ===== BALANCES ===== */
 .balances-section {
     display: flex;
@@ -467,30 +603,49 @@ body {
 
 .balance-item {
     display: flex;
-    justify-content: space-between;
-    padding: 10px 14px;
+    flex-direction: column;
+    padding: 12px 14px;
     background: #f8fafc;
     border-radius: 12px;
 }
 
+.balance-item .balance-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .balance-item .name {
-    font-weight: 450;
+    font-weight: 600;
+    font-size: 16px;
 }
 
 .balance-item .net {
     font-weight: 600;
+    font-size: 16px;
 }
 
 .balance-item .net.positive {
     color: #16a34a;
 }
-
 .balance-item .net.negative {
     color: #dc2626;
 }
-
 .balance-item .net.zero {
     color: #94a3b8;
+}
+
+.balance-item .balance-details {
+    display: flex;
+    gap: 16px;
+    margin-top: 4px;
+    font-size: 13px;
+    color: #64748b;
+}
+
+.balance-item .balance-details span {
+    display: flex;
+    gap: 4px;
 }
 
 .settlement-section {
@@ -601,7 +756,8 @@ body {
 }
 
 .modal-body input,
-.modal-body select {
+.modal-body select,
+.modal-body textarea {
     padding: 10px 14px;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
@@ -609,11 +765,18 @@ body {
     background: #fff;
     outline: none;
     transition: border 0.1s;
+    font-family: inherit;
 }
 
 .modal-body input:focus,
-.modal-body select:focus {
+.modal-body select:focus,
+.modal-body textarea:focus {
     border-color: #4f46e5;
+}
+
+.modal-body textarea {
+    resize: vertical;
+    min-height: 60px;
 }
 
 .checkbox-group {
@@ -644,6 +807,64 @@ body {
     width: 18px;
     height: 18px;
     accent-color: #4f46e5;
+}
+
+/* ===== SPLIT INPUTS ===== */
+.split-inputs-container {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.split-input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #f8fafc;
+    padding: 6px 12px;
+    border-radius: 10px;
+}
+
+.split-input-row .member-label {
+    font-weight: 500;
+    min-width: 60px;
+    font-size: 14px;
+}
+
+.split-input-row input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
+    outline: none;
+    width: 100%;
+}
+
+.split-input-row input:focus {
+    border-color: #4f46e5;
+}
+
+.split-input-row .suffix {
+    font-size: 14px;
+    color: #64748b;
+    min-width: 24px;
+}
+
+.split-info {
+    font-size: 13px;
+    color: #475569;
+    background: #f1f5f9;
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.split-info.valid {
+    background: #dcfce7;
+    color: #16a34a;
 }
 
 .btn-primary {
@@ -688,5 +909,22 @@ body {
         width: 52px;
         height: 52px;
         font-size: 28px;
+    }
+    .split-input-row {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .split-input-row .member-label {
+        min-width: 50px;
+    }
+    .group-title {
+        max-width: 140px;
+    }
+    .expense-details {
+        font-size: 12px;
+    }
+    .pie-chart {
+        width: 160px;
+        height: 160px;
     }
 }
