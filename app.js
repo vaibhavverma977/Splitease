@@ -1,7 +1,7 @@
 // ============================
 //  SplitEase - app.js (v1.4)
 //  Offline-first expense splitting
-//  Multi-payer support, mobile scroll fix
+//  Multi-payer support, mobile scroll fix, payer dropdown improvement
 // ============================
 
 // ---- DATA LAYER ----
@@ -318,7 +318,7 @@ function addMember() {
     saveData();
     renderGroup(currentGroupId);
 
-    // --- FIX: Clear input after successful addition ---
+    // Clear input after successful addition
     input.value = '';
 }
 
@@ -508,25 +508,52 @@ function renderPayerRows(group, existingPayers) {
         existingPayers = [{ member: members.length > 0 ? members[0] : '', amount: '' }];
     }
 
+    // Compute the set of members already selected (non-empty)
+    const selectedMembers = existingPayers.map(p => p.member).filter(m => m !== '');
+
     existingPayers.forEach((payer, index) => {
         const row = document.createElement('div');
         row.className = 'payer-row';
         row.dataset.index = index;
 
         const select = document.createElement('select');
+        // Add empty option first
         const emptyOpt = document.createElement('option');
         emptyOpt.value = '';
         emptyOpt.textContent = 'Select member';
         select.appendChild(emptyOpt);
-        members.forEach(m => {
+
+        // Determine which members are already used in other rows
+        const otherSelected = selectedMembers.filter((m, i) => i !== index && m !== '');
+        // Build available members: all members not used in other rows, plus the current row's own member
+        const availableMembers = members.filter(m => !otherSelected.includes(m) || m === payer.member);
+        // Ensure uniqueness
+        const uniqueAvailable = [...new Set(availableMembers)];
+        uniqueAvailable.forEach(m => {
             const opt = document.createElement('option');
             opt.value = m;
             opt.textContent = m;
             if (m === payer.member) opt.selected = true;
             select.appendChild(opt);
         });
+
+        // Set the selected value (in case it wasn't in the list)
+        if (payer.member && select.querySelector(`option[value="${payer.member}"]`)) {
+            select.value = payer.member;
+        } else if (payer.member) {
+            // If the current payer member is not in the list (shouldn't happen), add it
+            const opt = document.createElement('option');
+            opt.value = payer.member;
+            opt.textContent = payer.member;
+            opt.selected = true;
+            select.appendChild(opt);
+        }
+
+        // Event listener for change
         select.addEventListener('change', () => {
+            // After changing, update other rows to reflect the new selection
             updatePayerRows(group);
+            updatePayerSummary(group);
         });
 
         const input = document.createElement('input');
@@ -548,7 +575,8 @@ function renderPayerRows(group, existingPayers) {
         } else {
             removeBtn.addEventListener('click', () => {
                 container.removeChild(row);
-                updatePayerRows(group);
+                // Re-render to update options and button visibility
+                renderPayerRows(group, getCurrentPayers(group));
                 updatePayerSummary(group);
             });
         }
@@ -559,35 +587,93 @@ function renderPayerRows(group, existingPayers) {
         container.appendChild(row);
     });
 
-    updatePayerRows(group);
-    updatePayerSummary(group);
+    // Update the "+ Add payer" button visibility
+    const addBtn = document.getElementById('btn-add-payer');
+    if (addBtn) {
+        if (selectedMembers.length >= members.length && members.length > 0) {
+            addBtn.style.display = 'none';
+        } else {
+            addBtn.style.display = '';
+        }
+    }
+}
+
+// Helper to get current payers from the DOM (used after removal)
+function getCurrentPayers(group) {
+    const rows = document.querySelectorAll('.payer-row');
+    const payers = [];
+    rows.forEach(row => {
+        const select = row.querySelector('select');
+        const input = row.querySelector('input');
+        const member = select.value;
+        const amt = parseFloat(input.value) || 0;
+        if (member) {
+            payers.push({ member, amount: amt });
+        }
+    });
+    return payers;
 }
 
 function updatePayerRows(group) {
     const rows = document.querySelectorAll('.payer-row');
+    const members = group.members || [];
+
+    // Get current selections from all rows
     const selectedMembers = [];
     rows.forEach(row => {
         const select = row.querySelector('select');
-        const currentVal = select.value;
-        if (currentVal) selectedMembers.push(currentVal);
+        const val = select.value;
+        if (val) selectedMembers.push(val);
     });
 
-    rows.forEach(row => {
+    rows.forEach((row, index) => {
         const select = row.querySelector('select');
         const currentVal = select.value;
-        const options = select.querySelectorAll('option');
-        options.forEach(opt => {
-            if (opt.value === '') {
-                opt.disabled = false;
-                return;
-            }
-            if (selectedMembers.filter(v => v === opt.value).length > 1 && opt.value !== currentVal) {
-                opt.disabled = true;
-            } else {
-                opt.disabled = false;
-            }
+        // Determine used members in other rows
+        const otherSelected = selectedMembers.filter((m, i) => i !== index && m !== '');
+        // Build available members: all members not used in other rows, plus the current row's own member
+        const availableMembers = members.filter(m => !otherSelected.includes(m) || m === currentVal);
+        const uniqueAvailable = [...new Set(availableMembers)];
+
+        // Rebuild options
+        // Preserve the empty option and the current selection
+        const currentOptions = select.querySelectorAll('option');
+        const emptyOption = currentOptions[0]; // first is empty
+        // Remove all options except empty
+        while (select.options.length > 1) {
+            select.remove(1);
+        }
+        // Add new options
+        uniqueAvailable.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            if (m === currentVal) opt.selected = true;
+            select.appendChild(opt);
         });
+        // If currentVal is not in the list (should not happen), add it
+        if (currentVal && !select.querySelector(`option[value="${currentVal}"]`)) {
+            const opt = document.createElement('option');
+            opt.value = currentVal;
+            opt.textContent = currentVal;
+            opt.selected = true;
+            select.appendChild(opt);
+        }
+        // Ensure the selected value is set
+        if (currentVal) {
+            select.value = currentVal;
+        }
     });
+
+    // Update add button visibility
+    const addBtn = document.getElementById('btn-add-payer');
+    if (addBtn) {
+        if (selectedMembers.length >= members.length && members.length > 0) {
+            addBtn.style.display = 'none';
+        } else {
+            addBtn.style.display = '';
+        }
+    }
 }
 
 function updatePayerSummary(group) {
@@ -1819,6 +1905,7 @@ function init() {
         document.getElementById('btn-add-payer').addEventListener('click', () => {
             const group = groups.find(g => g.id === currentGroupId);
             if (!group) return;
+            // Get existing payers from current rows
             const rows = document.querySelectorAll('.payer-row');
             const existingPayers = [];
             rows.forEach(row => {
@@ -1830,8 +1917,17 @@ function init() {
                     existingPayers.push({ member, amount: amt });
                 }
             });
+            // Check if there are still unused members
+            const selectedMembers = existingPayers.map(p => p.member);
+            const available = group.members.filter(m => !selectedMembers.includes(m));
+            if (available.length === 0) {
+                // Should not happen because button is hidden when no available members
+                return;
+            }
+            // Add a new empty payer row
             existingPayers.push({ member: '', amount: '' });
             renderPayerRows(group, existingPayers);
+            updatePayerSummary(group);
         });
 
         // --- Modal close buttons ---
