@@ -326,7 +326,7 @@ function openEditExpenseModal(groupId, expenseId) {
     const payerSelect = document.getElementById('input-expense-payer');
     payerSelect.value = expense.payer || '';
 
-    // Included checkboxes (for equal or just to show)
+    // Included checkboxes
     const includedMembers = expense.included || [];
     const checkboxes = document.querySelectorAll('#expense-included-list input[type="checkbox"]');
     checkboxes.forEach(cb => {
@@ -1013,11 +1013,13 @@ function validateSplitInputs() {
 // ---- MODAL HELPERS ----
 
 function openModal(modalId) {
-    document.getElementById(modalId).classList.add('open');
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.add('open');
 }
 
 function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('open');
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.remove('open');
     editingExpenseId = null;
     document.getElementById('expense-modal-title').textContent = 'Add Expense';
     document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
@@ -1029,12 +1031,14 @@ function switchTab(tabName) {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
-    document.querySelector(`.tab-btn[data-tab="${tabName}"]`).classList.add('active');
+    const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
 
     document.querySelectorAll('.tab-panel').forEach(panel => {
         panel.classList.remove('active');
     });
-    document.getElementById(`tab-${tabName}`).classList.add('active');
+    const activePanel = document.getElementById(`tab-${tabName}`);
+    if (activePanel) activePanel.classList.add('active');
 
     // If overview tab, re-render to update chart
     if (tabName === 'overview') {
@@ -1049,126 +1053,160 @@ function init() {
     loadData();
 
     // --- Home: create group ---
-    document.getElementById('btn-create-group').addEventListener('click', () => {
-        openModal('modal-create-group');
-        document.getElementById('input-group-name').value = '';
-        document.getElementById('group-name-error').classList.add('hidden');
-    });
+    const createGroupBtn = document.getElementById('btn-create-group');
+    if (createGroupBtn) {
+        createGroupBtn.addEventListener('click', () => {
+            openModal('modal-create-group');
+            document.getElementById('input-group-name').value = '';
+            document.getElementById('group-name-error').classList.add('hidden');
+        });
+    }
 
-    document.getElementById('btn-confirm-group').addEventListener('click', () => {
-        const input = document.getElementById('input-group-name');
-        const name = input.value.trim();
-        const errorEl = document.getElementById('group-name-error');
-        if (!name) {
-            errorEl.textContent = 'Please enter a group name.';
-            errorEl.classList.remove('hidden');
-            return;
-        }
-        if (groups.some(g => g.name.toLowerCase() === name.toLowerCase())) {
-            errorEl.textContent = 'A group with this name already exists.';
-            errorEl.classList.remove('hidden');
-            return;
-        }
-        errorEl.classList.add('hidden');
-        const newGroup = {
-            id: generateId(),
-            name: name,
-            members: [],
-            expenses: []
-        };
-        groups.push(newGroup);
-        saveData();
-        closeModal('modal-create-group');
-        renderHome();
-    });
+    const confirmGroupBtn = document.getElementById('btn-confirm-group');
+    if (confirmGroupBtn) {
+        confirmGroupBtn.addEventListener('click', () => {
+            const input = document.getElementById('input-group-name');
+            const name = input.value.trim();
+            const errorEl = document.getElementById('group-name-error');
+            if (!name) {
+                errorEl.textContent = 'Please enter a group name.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            if (groups.some(g => g.name.toLowerCase() === name.toLowerCase())) {
+                errorEl.textContent = 'A group with this name already exists.';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            errorEl.classList.add('hidden');
+            const newGroup = {
+                id: generateId(),
+                name: name,
+                members: [],
+                expenses: []
+            };
+            groups.push(newGroup);
+            saveData();
+            closeModal('modal-create-group');
+            renderHome();
+        });
+    }
 
     // --- Back to home ---
-    document.getElementById('btn-back').addEventListener('click', () => {
-        showHomeView();
-    });
+    const backBtn = document.getElementById('btn-back');
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            showHomeView();
+        });
+    }
 
     // --- Rename group ---
-    document.getElementById('btn-rename-group').addEventListener('click', () => {
-        const group = groups.find(g => g.id === currentGroupId);
-        if (!group) return;
-        const newName = prompt('Enter new group name:', group.name);
-        if (newName === null) return;
-        const trimmed = newName.trim();
-        if (!trimmed) {
-            alert('Group name cannot be empty.');
-            return;
-        }
-        if (groups.some(g => g.id !== currentGroupId && g.name.toLowerCase() === trimmed.toLowerCase())) {
-            alert('A group with this name already exists.');
-            return;
-        }
-        group.name = trimmed;
-        saveData();
-        renderGroup(currentGroupId);
-    });
+    const renameBtn = document.getElementById('btn-rename-group');
+    if (renameBtn) {
+        renameBtn.addEventListener('click', () => {
+            const group = groups.find(g => g.id === currentGroupId);
+            if (!group) return;
+            const newName = prompt('Enter new group name:', group.name);
+            if (newName === null) return;
+            const trimmed = newName.trim();
+            if (!trimmed) {
+                alert('Group name cannot be empty.');
+                return;
+            }
+            if (groups.some(g => g.id !== currentGroupId && g.name.toLowerCase() === trimmed.toLowerCase())) {
+                alert('A group with this name already exists.');
+                return;
+            }
+            group.name = trimmed;
+            saveData();
+            renderGroup(currentGroupId);
+        });
+    }
 
     // --- Delete group ---
-    document.getElementById('btn-delete-group').addEventListener('click', () => {
-        if (!currentGroupId) return;
-        if (confirm('Delete this group and all its data?')) {
-            groups = groups.filter(g => g.id !== currentGroupId);
-            saveData();
-            showHomeView();
-        }
-    });
+    const deleteGroupBtn = document.getElementById('btn-delete-group');
+    if (deleteGroupBtn) {
+        deleteGroupBtn.addEventListener('click', () => {
+            if (!currentGroupId) return;
+            if (confirm('Delete this group and all its data?')) {
+                groups = groups.filter(g => g.id !== currentGroupId);
+                saveData();
+                showHomeView();
+            }
+        });
+    }
 
     // --- Add member ---
-    document.getElementById('btn-add-member').addEventListener('click', addMember);
-    document.getElementById('input-member-name').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') addMember();
-    });
+    const addMemberBtn = document.getElementById('btn-add-member');
+    if (addMemberBtn) {
+        addMemberBtn.addEventListener('click', addMember);
+    }
+    const memberInput = document.getElementById('input-member-name');
+    if (memberInput) {
+        memberInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') addMember();
+        });
+    }
 
     // --- Add expense: open modal ---
-    document.getElementById('btn-add-expense').addEventListener('click', () => {
-        const group = groups.find(g => g.id === currentGroupId);
-        if (!group) return;
-        if (!group.members || group.members.length === 0) {
-            alert('Please add members first.');
-            return;
-        }
-        editingExpenseId = null;
-        document.getElementById('expense-modal-title').textContent = 'Add Expense';
-        document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
-        populateExpenseModal(group);
-        document.getElementById('input-expense-desc').value = '';
-        document.getElementById('input-expense-amount').value = '';
-        document.getElementById('input-expense-notes').value = '';
-        document.getElementById('split-error').classList.add('hidden');
-        document.getElementById('split-info').classList.add('hidden');
-        document.getElementById('input-split-type').value = 'equal';
-        renderSplitInputs(group, null);
-        openModal('modal-add-expense');
-    });
+    const addExpenseBtn = document.getElementById('btn-add-expense');
+    if (addExpenseBtn) {
+        addExpenseBtn.addEventListener('click', () => {
+            const group = groups.find(g => g.id === currentGroupId);
+            if (!group) return;
+            if (!group.members || group.members.length === 0) {
+                alert('Please add members first.');
+                return;
+            }
+            editingExpenseId = null;
+            document.getElementById('expense-modal-title').textContent = 'Add Expense';
+            document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
+            populateExpenseModal(group);
+            document.getElementById('input-expense-desc').value = '';
+            document.getElementById('input-expense-amount').value = '';
+            document.getElementById('input-expense-notes').value = '';
+            document.getElementById('split-error').classList.add('hidden');
+            document.getElementById('split-info').classList.add('hidden');
+            document.getElementById('input-split-type').value = 'equal';
+            renderSplitInputs(group, null);
+            openModal('modal-add-expense');
+        });
+    }
 
-    document.getElementById('btn-confirm-expense').addEventListener('click', addExpense);
+    // --- Confirm expense (add or update) ---
+    const confirmExpenseBtn = document.getElementById('btn-confirm-expense');
+    if (confirmExpenseBtn) {
+        confirmExpenseBtn.addEventListener('click', addExpense);
+    }
 
     // --- Split type change ---
-    document.getElementById('input-split-type').addEventListener('change', () => {
-        document.getElementById('split-error').classList.add('hidden');
-        document.getElementById('split-info').classList.add('hidden');
-        const group = groups.find(g => g.id === currentGroupId);
-        if (group) {
-            let expenseData = null;
-            if (editingExpenseId) {
-                const exp = group.expenses.find(e => e.id === editingExpenseId);
-                if (exp) expenseData = exp;
+    const splitTypeSelect = document.getElementById('input-split-type');
+    if (splitTypeSelect) {
+        splitTypeSelect.addEventListener('change', () => {
+            document.getElementById('split-error').classList.add('hidden');
+            document.getElementById('split-info').classList.add('hidden');
+            const group = groups.find(g => g.id === currentGroupId);
+            if (group) {
+                let expenseData = null;
+                if (editingExpenseId) {
+                    const exp = group.expenses.find(e => e.id === editingExpenseId);
+                    if (exp) expenseData = exp;
+                }
+                renderSplitInputs(group, expenseData);
             }
-            renderSplitInputs(group, expenseData);
-        }
-    });
+        });
+    }
 
     // --- Amount input changes trigger validation ---
-    document.getElementById('input-expense-amount').addEventListener('input', () => {
-        const splitType = document.getElementById('input-split-type').value;
-        if (splitType === 'custom' || splitType === 'percentage') {
-            validateSplitInputs();
-        }
-    });
+    const amountInput = document.getElementById('input-expense-amount');
+    if (amountInput) {
+        amountInput.addEventListener('input', () => {
+            const splitType = document.getElementById('input-split-type').value;
+            if (splitType === 'custom' || splitType === 'percentage') {
+                validateSplitInputs();
+            }
+        });
+    }
 
     // --- Modal close buttons ---
     document.querySelectorAll('.modal-close').forEach(btn => {
