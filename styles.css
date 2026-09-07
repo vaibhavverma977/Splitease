@@ -998,6 +998,9 @@ body {
     padding: 20px 20px 30px;
     box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
     animation: slideUp 0.2s ease;
+    /* ---- FIX: Prevent clipping on small screens ---- */
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 @keyframes slideUp {
@@ -1274,7 +1277,7 @@ body {
     }
 }
 
-/* NEW: Group header fix for narrow screens */
+/* Group header fix for narrow screens */
 @media (max-width: 360px) {
     .group-header {
         padding: 8px 0 12px;
