@@ -1,7 +1,7 @@
 // ============================
-//  SplitEase - app.js (v1)
+//  SplitEase - app.js (v1.3)
 //  Offline-first expense splitting
-//  Full V1 with Open/History & payment tracking
+//  Multi-currency, custom amount live summary, redesigned balances, tab fix
 // ============================
 
 // ---- DATA LAYER ----
@@ -12,6 +12,24 @@ let groups = [];
 let currentGroupId = null;
 let editingExpenseId = null;
 let currentStatusFilter = 'open'; // 'open' or 'settled'
+let currentTab = 'members'; // track active tab
+
+// Currency symbols and names
+const CURRENCIES = {
+    INR: { symbol: '₹', name: 'Indian Rupee' },
+    USD: { symbol: '$', name: 'US Dollar' },
+    EUR: { symbol: '€', name: 'Euro' },
+    GBP: { symbol: '£', name: 'British Pound' },
+    AED: { symbol: 'د.إ', name: 'UAE Dirham' },
+    JPY: { symbol: '¥', name: 'Japanese Yen' },
+    CAD: { symbol: 'C$', name: 'Canadian Dollar' },
+    AUD: { symbol: 'A$', name: 'Australian Dollar' },
+    SGD: { symbol: 'S$', name: 'Singapore Dollar' }
+};
+
+function getCurrencySymbol(code) {
+    return CURRENCIES[code]?.symbol || code;
+}
 
 // Load data from localStorage
 function loadData() {
@@ -25,7 +43,8 @@ function loadData() {
                 groups.forEach(g => {
                     if (!g.status) g.status = 'open';
                     if (g.settledAt === undefined) g.settledAt = null;
-                    if (!g.paymentStatus) g.paymentStatus = {}; // new: payment tracking
+                    if (!g.paymentStatus) g.paymentStatus = {};
+                    if (!g.baseCurrency) g.baseCurrency = 'INR';
                 });
                 return;
             }
@@ -64,6 +83,11 @@ function getToday() {
     return `${d.getFullYear()}-${month}-${day}`;
 }
 
+function formatCurrency(amount, currencyCode = 'INR') {
+    const symbol = getCurrencySymbol(currencyCode);
+    return `${symbol}${amount.toFixed(2)}`;
+}
+
 // ---- VIEWS / NAVIGATION ----
 
 function showHomeView() {
@@ -77,6 +101,7 @@ function showGroupView(groupId) {
     document.getElementById('home-view').classList.remove('active');
     document.getElementById('group-view').classList.add('active');
     currentGroupId = groupId;
+    currentTab = 'members'; // default tab when opening group
     renderGroup(groupId);
 }
 
@@ -118,12 +143,14 @@ function renderHome() {
         const metaSpan = document.createElement('span');
         metaSpan.className = 'group-card-meta';
         const memberCount = group.members ? group.members.length : 0;
-        const expenseCount = group.expenses ? group.expenses.length : 0;
         let totalSpent = 0;
         if (group.expenses) {
-            group.expenses.forEach(e => totalSpent += e.amount);
+            group.expenses.forEach(e => {
+                // Use baseAmount if available, else amount (backward compat)
+                totalSpent += (e.baseAmount !== undefined ? e.baseAmount : e.amount);
+            });
         }
-        let metaText = `${memberCount} members · ₹${totalSpent.toFixed(2)} spent`;
+        let metaText = `${memberCount} members · ${formatCurrency(totalSpent, group.baseCurrency || 'INR')} spent`;
         if (group.status === 'settled' && group.settledAt) {
             metaText += ` · Settled ${formatDateTime(group.settledAt)}`;
             const badge = document.createElement('span');
@@ -163,13 +190,18 @@ function renderGroup(groupId) {
     }
 
     document.getElementById('group-title').textContent = group.name;
+    // Update currency button text
+    const currencyBtn = document.getElementById('btn-change-currency');
+    currencyBtn.textContent = getCurrencySymbol(group.baseCurrency || 'INR');
+
     renderGroupStatusAction(group);
     renderMembers(group);
     renderExpenses(group);
     renderOverview(group);
     renderBalances(group);
     populateExpenseModal(group);
-    switchTab('members');
+    // Keep current tab active
+    switchTab(currentTab);
 }
 
 // ---- GROUP STATUS ACTION ----
@@ -343,6 +375,16 @@ function renderExpenses(group) {
         let splitTypeLabel = 'Equal';
         if (exp.splitType === 'percentage') splitTypeLabel = 'Percentage';
         else if (exp.splitType === 'custom') splitTypeLabel = 'Custom';
+
+        // FIX 2: Compare against group.baseCurrency instead of hardcoded 'INR'
+        let amountDisplay = '';
+        if (exp.originalCurrency && exp.originalCurrency !== group.baseCurrency) {
+            const origSym = getCurrencySymbol(exp.originalCurrency);
+            amountDisplay = `${origSym}${Number(exp.originalAmount).toFixed(2)} (${formatCurrency(exp.baseAmount || exp.amount, group.baseCurrency || 'INR')})`;
+        } else {
+            amountDisplay = formatCurrency(exp.amount, group.baseCurrency || 'INR');
+        }
+
         details.innerHTML = `
             <span>Paid by ${payer}${datePart}</span>
             <span class="split-type-badge">${splitTypeLabel}</span>
@@ -353,7 +395,7 @@ function renderExpenses(group) {
 
         const amountSpan = document.createElement('span');
         amountSpan.className = 'expense-amount';
-        amountSpan.textContent = `₹${Number(exp.amount).toFixed(2)}`;
+        amountSpan.textContent = amountDisplay;
 
         const actions = document.createElement('div');
         actions.className = 'expense-actions';
@@ -406,9 +448,23 @@ function openEditExpenseModal(groupId, expenseId) {
 
     // Fill fields
     document.getElementById('input-expense-desc').value = expense.description || '';
-    document.getElementById('input-expense-amount').value = expense.amount || '';
+    document.getElementById('input-expense-amount').value = expense.originalAmount || expense.amount || '';
     document.getElementById('input-expense-date').value = expense.date || getToday();
     document.getElementById('input-expense-notes').value = expense.notes || '';
+
+    // Currency
+    const currencySelect = document.getElementById('input-expense-currency');
+    const expCurrency = expense.originalCurrency || 'INR';
+    currencySelect.value = expCurrency;
+    // Show/hide exchange rate group
+    const baseCurrency = group.baseCurrency || 'INR';
+    if (expCurrency !== baseCurrency) {
+        document.getElementById('exchange-rate-group').style.display = 'block';
+        document.getElementById('input-exchange-rate').value = expense.exchangeRate || 1;
+        updateConvertedAmountDisplay(baseCurrency, expCurrency);
+    } else {
+        document.getElementById('exchange-rate-group').style.display = 'none';
+    }
 
     // Payer
     const payerSelect = document.getElementById('input-expense-payer');
@@ -435,6 +491,8 @@ function openEditExpenseModal(groupId, expenseId) {
 function addExpense() {
     const descInput = document.getElementById('input-expense-desc');
     const amountInput = document.getElementById('input-expense-amount');
+    const currencySelect = document.getElementById('input-expense-currency');
+    const exchangeRateInput = document.getElementById('input-exchange-rate');
     const dateInput = document.getElementById('input-expense-date');
     const payerSelect = document.getElementById('input-expense-payer');
     const splitTypeSelect = document.getElementById('input-split-type');
@@ -444,6 +502,7 @@ function addExpense() {
 
     const description = descInput.value.trim();
     const amount = parseFloat(amountInput.value);
+    const currency = currencySelect.value;
     const date = dateInput.value || getToday();
     const payer = payerSelect.value;
     const splitType = splitTypeSelect.value;
@@ -479,14 +538,37 @@ function addExpense() {
     const group = groups.find(g => g.id === currentGroupId);
     if (!group) return;
 
+    const baseCurrency = group.baseCurrency || 'INR';
+    let exchangeRate = 1;
+    let baseAmount = amount;
+    let originalAmount = amount;
+    let originalCurrency = currency;
+
+    if (currency !== baseCurrency) {
+        const rate = parseFloat(exchangeRateInput.value);
+        if (isNaN(rate) || rate <= 0) {
+            errorEl.textContent = 'Please enter a valid exchange rate.';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+        exchangeRate = rate;
+        baseAmount = amount * rate;
+        originalAmount = amount;
+        originalCurrency = currency;
+    }
+
     // Build expense object
     let expenseData = {
         description,
-        amount,
+        amount: baseAmount, // store base amount for calculations
         date,
         payer,
         splitType,
-        notes
+        notes,
+        originalCurrency,
+        originalAmount,
+        exchangeRate,
+        baseAmount // store explicitly
     };
 
     if (splitType === 'equal') {
@@ -531,8 +613,11 @@ function addExpense() {
             }
             expenseData.splits = splits;
         } else if (splitType === 'custom') {
-            if (Math.abs(total - amount) > 0.001) {
-                errorEl.textContent = `Total custom amounts (₹${total.toFixed(2)}) must equal ₹${amount.toFixed(2)}.`;
+            // For custom split, the amounts are in the original currency? We'll keep as entered.
+            // They must sum to the original amount (not base amount)
+            // Validate against originalAmount
+            if (Math.abs(total - originalAmount) > 0.001) {
+                errorEl.textContent = `Total custom amounts (${formatCurrency(total, currency)}) must equal expense amount (${formatCurrency(originalAmount, currency)}).`;
                 errorEl.classList.remove('hidden');
                 return;
             }
@@ -541,14 +626,16 @@ function addExpense() {
                 errorEl.classList.remove('hidden');
                 return;
             }
+            // Store splits in original currency
             expenseData.splits = splits;
+            // Also store splits in base currency for calculations?
+            // We'll convert splits to base amounts in calculateExpenseShares
         }
     }
 
     errorEl.classList.add('hidden');
 
     if (editingExpenseId) {
-        // Update existing expense
         const index = group.expenses.findIndex(e => e.id === editingExpenseId);
         if (index !== -1) {
             const oldExp = group.expenses[index];
@@ -585,11 +672,11 @@ function renderOverview(group) {
     const totalSpan = document.getElementById('total-spending');
     const empty = document.getElementById('overview-empty');
 
-    // Compute spending by member
+    // Compute spending by member (in base currency)
     const spending = calculateSpendingByMember(group);
     const total = Object.values(spending).reduce((sum, val) => sum + val, 0);
-
-    totalSpan.textContent = `₹${total.toFixed(2)}`;
+    const baseCurrency = group.baseCurrency || 'INR';
+    totalSpan.textContent = formatCurrency(total, baseCurrency);
 
     if (total === 0 || !group.members || group.members.length === 0) {
         empty.style.display = 'block';
@@ -600,12 +687,10 @@ function renderOverview(group) {
     }
     empty.style.display = 'none';
 
-    // Build pie chart (SVG)
     const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
     const membersWithSpending = group.members.filter(m => spending[m] && spending[m] > 0);
     const totalSpending = total;
 
-    // Prepare data for slices
     const slices = membersWithSpending.map((member, index) => {
         const value = spending[member];
         const percentage = (value / totalSpending) * 100;
@@ -613,14 +698,12 @@ function renderOverview(group) {
         return { member, value, percentage, color };
     });
 
-    // Generate SVG pie chart
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 100 100');
     svg.style.width = '100%';
     svg.style.height = '100%';
 
-    let startAngle = -90; // start at top (12 o'clock)
-
+    let startAngle = -90;
     slices.forEach(slice => {
         const angle = (slice.percentage / 100) * 360;
         const endAngle = startAngle + angle;
@@ -639,11 +722,9 @@ function renderOverview(group) {
         path.setAttribute('stroke', '#fff');
         path.setAttribute('stroke-width', '1');
         svg.appendChild(path);
-
         startAngle = endAngle;
     });
 
-    // Add a small white circle in the center for donut effect
     const centerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     centerCircle.setAttribute('cx', '50');
     centerCircle.setAttribute('cy', '50');
@@ -654,7 +735,6 @@ function renderOverview(group) {
     container.innerHTML = '';
     container.appendChild(svg);
 
-    // Legend
     legendContainer.innerHTML = '';
     slices.forEach(slice => {
         const item = document.createElement('div');
@@ -663,13 +743,12 @@ function renderOverview(group) {
         colorBox.className = 'legend-color';
         colorBox.style.backgroundColor = slice.color;
         const label = document.createElement('span');
-        label.textContent = `${slice.member} (₹${slice.value.toFixed(2)})`;
+        label.textContent = `${slice.member} (${formatCurrency(slice.value, baseCurrency)})`;
         item.appendChild(colorBox);
         item.appendChild(label);
         legendContainer.appendChild(item);
     });
 
-    // Breakdown list
     breakdownContainer.innerHTML = '';
     group.members.forEach(member => {
         const amount = spending[member] || 0;
@@ -681,7 +760,7 @@ function renderOverview(group) {
         nameSpan.textContent = member;
         const amountSpan = document.createElement('span');
         amountSpan.className = 'amount';
-        amountSpan.textContent = `₹${amount.toFixed(2)}`;
+        amountSpan.textContent = formatCurrency(amount, baseCurrency);
         const percentSpan = document.createElement('span');
         percentSpan.className = 'percent';
         percentSpan.textContent = `${percent.toFixed(1)}%`;
@@ -710,7 +789,40 @@ function renderBalances(group) {
     }
 
     const balances = calculateBalances(group);
+    const baseCurrency = group.baseCurrency || 'INR';
 
+    // Compute summary
+    let totalToReceive = 0, totalToPay = 0, pendingCount = 0;
+    const settlement = calculateSettlement(group);
+    pendingCount = settlement.length;
+
+    // Calculate totals from balances
+    group.members.forEach(m => {
+        const net = balances[m]?.net || 0;
+        if (net > 0.005) totalToReceive += net;
+        else if (net < -0.005) totalToPay += Math.abs(net);
+    });
+
+    // Summary
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'balance-summary-top';
+    summaryDiv.innerHTML = `
+        <div class="summary-item">
+            <div class="summary-label">Total to receive</div>
+            <div class="summary-value" style="color:#16a34a;">${formatCurrency(totalToReceive, baseCurrency)}</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Total to pay</div>
+            <div class="summary-value" style="color:#dc2626;">${formatCurrency(totalToPay, baseCurrency)}</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Pending settlements</div>
+            <div class="summary-value">${pendingCount}</div>
+        </div>
+    `;
+    container.appendChild(summaryDiv);
+
+    // Individual balances
     const sortedMembers = [...group.members].sort((a, b) => {
         return (balances[b]?.net || 0) - (balances[a]?.net || 0);
     });
@@ -732,13 +844,13 @@ function renderBalances(group) {
         const netValue = data.net;
         if (netValue > 0.005) {
             netSpan.classList.add('positive');
-            netSpan.textContent = `+₹${netValue.toFixed(2)}`;
+            netSpan.textContent = `+${formatCurrency(netValue, baseCurrency)}`;
         } else if (netValue < -0.005) {
             netSpan.classList.add('negative');
-            netSpan.textContent = `-₹${Math.abs(netValue).toFixed(2)}`;
+            netSpan.textContent = `-${formatCurrency(Math.abs(netValue), baseCurrency)}`;
         } else {
             netSpan.classList.add('zero');
-            netSpan.textContent = '₹0.00';
+            netSpan.textContent = formatCurrency(0, baseCurrency);
         }
 
         row.appendChild(nameSpan);
@@ -747,30 +859,40 @@ function renderBalances(group) {
         const details = document.createElement('div');
         details.className = 'balance-details';
         details.innerHTML = `
-            <span>Paid: ₹${data.paid.toFixed(2)}</span>
-            <span>Share: ₹${data.share.toFixed(2)}</span>
+            <span>Paid: ${formatCurrency(data.paid, baseCurrency)}</span>
+            <span>Share: ${formatCurrency(data.share, baseCurrency)}</span>
         `;
+
+        const action = document.createElement('div');
+        action.className = 'balance-action';
+        if (netValue > 0.005) {
+            action.classList.add('positive');
+            action.textContent = `Will receive: ${formatCurrency(netValue, baseCurrency)}`;
+        } else if (netValue < -0.005) {
+            action.classList.add('negative');
+            action.textContent = `Needs to pay: ${formatCurrency(Math.abs(netValue), baseCurrency)}`;
+        } else {
+            action.classList.add('zero');
+            action.textContent = 'Settled';
+        }
 
         item.appendChild(row);
         item.appendChild(details);
+        item.appendChild(action);
         container.appendChild(item);
     });
 
-    // Settlement
-    const settlement = calculateSettlement(group);
+    // Settlement list
     if (settlement.length === 0) {
         const msg = document.createElement('div');
         msg.className = 'settlement-item';
         msg.textContent = 'All settled! 🎉';
         settlementContainer.appendChild(msg);
     } else {
-        // Ensure paymentStatus exists
         if (!group.paymentStatus) group.paymentStatus = {};
 
-        settlement.forEach((s, index) => {
-            // Generate a stable key for this settlement
+        settlement.forEach((s) => {
             const key = `settlement_${s.from}_${s.to}_${s.amount.toFixed(2)}`;
-            // Check if already paid
             const isPaid = group.paymentStatus[key] === true;
 
             const item = document.createElement('div');
@@ -787,7 +909,7 @@ function renderBalances(group) {
 
             const amountSpan = document.createElement('span');
             amountSpan.className = 'amount';
-            amountSpan.textContent = `₹${s.amount.toFixed(2)}`;
+            amountSpan.textContent = formatCurrency(s.amount, baseCurrency);
 
             const statusDiv = document.createElement('span');
             statusDiv.className = 'payment-status';
@@ -834,16 +956,18 @@ function togglePayment(groupId, key) {
     if (!group) return;
     if (!group.paymentStatus) group.paymentStatus = {};
 
-    // Toggle the payment status
     group.paymentStatus[key] = !group.paymentStatus[key];
     saveData();
+    // Re-render group but keep current tab
+    currentTab = 'balances';
     renderGroup(groupId);
 }
 
 // ---- CALCULATION FUNCTIONS ----
 
 function calculateExpenseShares(expense) {
-    const amount = expense.amount;
+    // Returns an object { member: share } in base currency
+    const amount = expense.baseAmount !== undefined ? expense.baseAmount : expense.amount;
     const splitType = expense.splitType || 'equal';
     let shares = {};
 
@@ -854,10 +978,19 @@ function calculateExpenseShares(expense) {
         included.forEach(person => {
             shares[person] = perPerson;
         });
-    } else if (splitType === 'percentage' || splitType === 'custom') {
-        shares = expense.splits || {};
-        Object.keys(shares).forEach(key => {
-            shares[key] = Number(shares[key]);
+    } else if (splitType === 'percentage') {
+        const splits = expense.splits || {};
+        const totalPct = Object.values(splits).reduce((a, b) => a + b, 0);
+        if (totalPct === 0) return {};
+        Object.keys(splits).forEach(person => {
+            shares[person] = (splits[person] / totalPct) * amount;
+        });
+    } else if (splitType === 'custom') {
+        // splits are in original currency; convert to base using exchange rate
+        const splits = expense.splits || {};
+        const exchangeRate = expense.exchangeRate || 1;
+        Object.keys(splits).forEach(person => {
+            shares[person] = splits[person] * exchangeRate;
         });
     }
 
@@ -875,7 +1008,7 @@ function calculateBalances(group) {
     if (!group.expenses) return balances;
 
     group.expenses.forEach(exp => {
-        const amount = exp.amount;
+        const amount = exp.baseAmount !== undefined ? exp.baseAmount : exp.amount;
         const payer = exp.payer;
         const shares = calculateExpenseShares(exp);
 
@@ -945,12 +1078,31 @@ function calculateSpendingByMember(group) {
 
     group.expenses.forEach(exp => {
         const payer = exp.payer;
+        const amount = exp.baseAmount !== undefined ? exp.baseAmount : exp.amount;
         if (spending[payer] !== undefined) {
-            spending[payer] += exp.amount;
+            spending[payer] += amount;
         }
     });
 
     return spending;
+}
+
+// ---- CURRENCY EXCHANGE RATE UI ----
+
+function updateConvertedAmountDisplay(baseCurrency, expCurrency) {
+    const amountInput = document.getElementById('input-expense-amount');
+    const rateInput = document.getElementById('input-exchange-rate');
+    const display = document.getElementById('converted-amount-display');
+    const amount = parseFloat(amountInput.value);
+    const rate = parseFloat(rateInput.value);
+    if (!isNaN(amount) && !isNaN(rate) && rate > 0) {
+        const converted = amount * rate;
+        display.textContent = `= ${formatCurrency(converted, baseCurrency)}`;
+        display.style.display = 'block';
+    } else {
+        display.textContent = '';
+        display.style.display = 'none';
+    }
 }
 
 // ---- POPULATE EXPENSE MODAL (for new expense) ----
@@ -996,6 +1148,17 @@ function populateExpenseModal(group) {
 
     document.getElementById('input-expense-date').value = getToday();
     document.getElementById('input-split-type').value = 'equal';
+
+    // Currency defaults
+    const baseCurrency = group.baseCurrency || 'INR';
+    const currencySelect = document.getElementById('input-expense-currency');
+    currencySelect.value = baseCurrency; // default to base currency
+    document.getElementById('exchange-rate-group').style.display = 'none';
+    document.getElementById('converted-amount-display').textContent = '';
+
+    // Set labels for exchange rate
+    document.getElementById('base-currency-label').textContent = baseCurrency;
+
     renderSplitInputs(group, null);
 }
 
@@ -1013,8 +1176,10 @@ function renderSplitInputs(group, expenseData) {
     container.innerHTML = '';
     const errorEl = document.getElementById('split-error');
     const infoEl = document.getElementById('split-info');
+    const summaryEl = document.getElementById('custom-summary');
     errorEl.classList.add('hidden');
     infoEl.classList.add('hidden');
+    summaryEl.classList.add('hidden');
 
     if (included.length === 0) {
         container.innerHTML = '<div style="font-size:13px;color:#94a3b8;">Select at least one member.</div>';
@@ -1023,12 +1188,18 @@ function renderSplitInputs(group, expenseData) {
 
     if (splitType === 'equal') {
         container.innerHTML = '<div style="font-size:13px;color:#64748b;">Equal split among selected members.</div>';
+        summaryEl.classList.add('hidden');
         return;
     }
 
     const amountInput = document.getElementById('input-expense-amount');
     const totalAmount = parseFloat(amountInput.value) || 0;
+    const currency = document.getElementById('input-expense-currency').value;
     const splits = expenseData?.splits || {};
+
+    // Determine if we should show amounts in original or base currency
+    // For custom split, amounts are entered in the expense currency.
+    const displayCurrency = currency;
 
     included.forEach(member => {
         const row = document.createElement('div');
@@ -1043,7 +1214,7 @@ function renderSplitInputs(group, expenseData) {
         input.type = 'number';
         input.step = '0.01';
         input.min = '0';
-        input.placeholder = splitType === 'percentage' ? '%' : '₹';
+        input.placeholder = splitType === 'percentage' ? '%' : getCurrencySymbol(displayCurrency);
 
         if (expenseData && splits[member] !== undefined) {
             input.value = splits[member];
@@ -1056,12 +1227,12 @@ function renderSplitInputs(group, expenseData) {
         }
 
         input.addEventListener('input', () => {
-            validateSplitInputs();
+            validateSplitInputs(group);
         });
 
         const suffix = document.createElement('span');
         suffix.className = 'suffix';
-        suffix.textContent = splitType === 'percentage' ? '%' : '₹';
+        suffix.textContent = splitType === 'percentage' ? '%' : getCurrencySymbol(displayCurrency);
 
         row.appendChild(label);
         row.appendChild(input);
@@ -1069,22 +1240,42 @@ function renderSplitInputs(group, expenseData) {
         container.appendChild(row);
     });
 
-    validateSplitInputs();
+    // For custom, show summary
+    if (splitType === 'custom') {
+        summaryEl.classList.remove('hidden');
+        // Also attach listener to amount and currency changes to update summary
+        amountInput.addEventListener('input', () => {
+            validateSplitInputs(group);
+        });
+        document.getElementById('input-expense-currency').addEventListener('change', () => {
+            validateSplitInputs(group);
+        });
+        // Initial validation
+        validateSplitInputs(group);
+    } else {
+        summaryEl.classList.add('hidden');
+    }
 
-    amountInput.addEventListener('input', validateSplitInputs);
+    // For percentage, we can show info but not summary
+    if (splitType === 'percentage') {
+        validateSplitInputs(group);
+    }
 }
 
-function validateSplitInputs() {
+function validateSplitInputs(group) {
     const splitType = document.getElementById('input-split-type').value;
     const errorEl = document.getElementById('split-error');
     const infoEl = document.getElementById('split-info');
+    const summaryEl = document.getElementById('custom-summary');
     const rows = document.querySelectorAll('.split-input-row');
     const amountInput = document.getElementById('input-expense-amount');
     const totalAmount = parseFloat(amountInput.value) || 0;
+    const currency = document.getElementById('input-expense-currency').value;
 
     if (splitType === 'equal' || rows.length === 0) {
         errorEl.classList.add('hidden');
         infoEl.classList.add('hidden');
+        summaryEl.classList.add('hidden');
         return;
     }
 
@@ -1109,6 +1300,7 @@ function validateSplitInputs() {
         errorEl.textContent = errorMsg;
         errorEl.classList.remove('hidden');
         infoEl.classList.add('hidden');
+        summaryEl.classList.add('hidden');
         return;
     }
 
@@ -1120,34 +1312,64 @@ function validateSplitInputs() {
             isError = true;
             errorEl.textContent = `Total percentage must equal 100% (current: ${total.toFixed(2)}%)`;
             errorEl.classList.remove('hidden');
-        } else {
-            errorEl.classList.add('hidden');
-            const perPerson = Object.keys(values).map(member => {
-                const pct = values[member];
-                const amt = (pct / 100) * totalAmount;
-                return { member, pct, amt };
-            });
-            infoText = perPerson.map(p => `${p.member}: ₹${p.amt.toFixed(2)} (${p.pct.toFixed(2)}%)`).join(' · ');
-            infoEl.textContent = infoText;
-            infoEl.className = 'split-info valid';
-            infoEl.classList.remove('hidden');
-        }
-    } else if (splitType === 'custom') {
-        if (Math.abs(total - totalAmount) > 0.001) {
-            isError = true;
-            errorEl.textContent = `Total custom amounts (₹${total.toFixed(2)}) must equal expense amount (₹${totalAmount.toFixed(2)}).`;
-            errorEl.classList.remove('hidden');
             infoEl.classList.add('hidden');
         } else {
             errorEl.classList.add('hidden');
-            infoText = `Total: ₹${total.toFixed(2)} ✓`;
+            // Show computed amounts in base currency
+            const baseCurrency = group?.baseCurrency || 'INR';
+            const perPerson = Object.keys(values).map(member => {
+                const pct = values[member];
+                const amt = (pct / 100) * totalAmount; // totalAmount is in base currency? Actually amount is in base currency.
+                // But if expense is in foreign currency, totalAmount is in foreign currency, and we need to convert?
+                // We'll use the exchange rate.
+                const exchangeRate = parseFloat(document.getElementById('input-exchange-rate').value) || 1;
+                const baseAmt = totalAmount * exchangeRate;
+                const shareBase = (pct / 100) * baseAmt;
+                return { member, pct, baseAmt: shareBase };
+            });
+            infoText = perPerson.map(p => `${p.member}: ${formatCurrency(p.baseAmt, baseCurrency)} (${p.pct.toFixed(2)}%)`).join(' · ');
             infoEl.textContent = infoText;
             infoEl.className = 'split-info valid';
             infoEl.classList.remove('hidden');
+            summaryEl.classList.add('hidden');
         }
-    }
+    } else if (splitType === 'custom') {
+        // Custom split: show allocated and remaining
+        const expenseAmount = parseFloat(document.getElementById('input-expense-amount').value) || 0;
+        const exchangeRate = parseFloat(document.getElementById('input-exchange-rate').value) || 1;
+        // Values are in original currency
+        const allocated = total;
+        const remaining = expenseAmount - allocated;
 
-    if (isError) {
+        // Update summary
+        const summaryHtml = `
+            <div class="summary-line">
+                <span class="label">Expense Total:</span>
+                <span class="value">${formatCurrency(expenseAmount, currency)}</span>
+            </div>
+            <div class="summary-line">
+                <span class="label">Allocated:</span>
+                <span class="value">${formatCurrency(allocated, currency)}</span>
+            </div>
+            <div class="summary-line remaining ${Math.abs(remaining) < 0.001 ? 'valid' : (remaining > 0 ? 'invalid' : 'invalid')}">
+                <span class="label">Remaining:</span>
+                <span class="value">${formatCurrency(remaining, currency)}</span>
+            </div>
+        `;
+        summaryEl.innerHTML = summaryHtml;
+        summaryEl.classList.remove('hidden');
+
+        // Validate
+        if (Math.abs(remaining) < 0.001) {
+            errorEl.classList.add('hidden');
+            // All good
+        } else if (remaining > 0) {
+            errorEl.textContent = `Please allocate the remaining ${formatCurrency(remaining, currency)}.`;
+            errorEl.classList.remove('hidden');
+        } else {
+            errorEl.textContent = `Allocated amount exceeds expense by ${formatCurrency(Math.abs(remaining), currency)}.`;
+            errorEl.classList.remove('hidden');
+        }
         infoEl.classList.add('hidden');
     }
 }
@@ -1170,6 +1392,9 @@ function closeModal(modalId) {
 // ---- TAB SWITCHING ----
 
 function switchTab(tabName) {
+    // Update stored current tab
+    currentTab = tabName;
+
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
@@ -1182,6 +1407,7 @@ function switchTab(tabName) {
     const activePanel = document.getElementById(`tab-${tabName}`);
     if (activePanel) activePanel.classList.add('active');
 
+    // If overview tab, re-render to update chart
     if (tabName === 'overview') {
         const group = groups.find(g => g.id === currentGroupId);
         if (group) renderOverview(group);
@@ -1245,7 +1471,8 @@ function init() {
                 expenses: [],
                 status: 'open',
                 settledAt: null,
-                paymentStatus: {}
+                paymentStatus: {},
+                baseCurrency: 'INR'
             };
             groups.push(newGroup);
             saveData();
@@ -1280,6 +1507,35 @@ function init() {
                 return;
             }
             group.name = trimmed;
+            saveData();
+            renderGroup(currentGroupId);
+        });
+    }
+
+    // --- Change base currency (FIX 1 applied) ---
+    const currencyBtn = document.getElementById('btn-change-currency');
+    if (currencyBtn) {
+        currencyBtn.addEventListener('click', () => {
+            const group = groups.find(g => g.id === currentGroupId);
+            if (!group) return;
+
+            // FIX 1: Prevent change if group has any expenses
+            if (group.expenses && group.expenses.length > 0) {
+                alert('Base currency can\'t be changed after expenses have been added.');
+                return;
+            }
+
+            const currencyCodes = Object.keys(CURRENCIES);
+            const current = group.baseCurrency || 'INR';
+            const msg = `Current base currency: ${current} (${CURRENCIES[current].name})\n\nSelect new base currency:\n${currencyCodes.join(', ')}`;
+            const newCode = prompt(msg, current);
+            if (newCode === null) return;
+            const trimmedCode = newCode.trim().toUpperCase();
+            if (!CURRENCIES[trimmedCode]) {
+                alert('Invalid currency code. Please use one of: ' + currencyCodes.join(', '));
+                return;
+            }
+            group.baseCurrency = trimmedCode;
             saveData();
             renderGroup(currentGroupId);
         });
@@ -1330,6 +1586,9 @@ function init() {
             document.getElementById('split-error').classList.add('hidden');
             document.getElementById('split-info').classList.add('hidden');
             document.getElementById('input-split-type').value = 'equal';
+            // Reset exchange rate group
+            document.getElementById('exchange-rate-group').style.display = 'none';
+            document.getElementById('converted-amount-display').textContent = '';
             renderSplitInputs(group, null);
             openModal('modal-add-expense');
         });
@@ -1359,14 +1618,64 @@ function init() {
         });
     }
 
+    // --- Currency change in modal ---
+    const currencySelect = document.getElementById('input-expense-currency');
+    if (currencySelect) {
+        currencySelect.addEventListener('change', () => {
+            const group = groups.find(g => g.id === currentGroupId);
+            if (!group) return;
+            const baseCurrency = group.baseCurrency || 'INR';
+            const expCurrency = currencySelect.value;
+            if (expCurrency === baseCurrency) {
+                document.getElementById('exchange-rate-group').style.display = 'none';
+                document.getElementById('converted-amount-display').textContent = '';
+            } else {
+                document.getElementById('exchange-rate-group').style.display = 'block';
+                document.getElementById('base-currency-label').textContent = baseCurrency;
+                document.getElementById('exp-currency-label').textContent = expCurrency;
+                // Update conversion display
+                updateConvertedAmountDisplay(baseCurrency, expCurrency);
+            }
+            // Re-validate custom split summary
+            const groupObj = groups.find(g => g.id === currentGroupId);
+            validateSplitInputs(groupObj);
+        });
+    }
+
+    // --- Exchange rate input ---
+    const rateInput = document.getElementById('input-exchange-rate');
+    if (rateInput) {
+        rateInput.addEventListener('input', () => {
+            const group = groups.find(g => g.id === currentGroupId);
+            if (!group) return;
+            const baseCurrency = group.baseCurrency || 'INR';
+            const expCurrency = document.getElementById('input-expense-currency').value;
+            if (expCurrency !== baseCurrency) {
+                updateConvertedAmountDisplay(baseCurrency, expCurrency);
+            }
+            // Re-validate custom split summary if custom
+            const splitType = document.getElementById('input-split-type').value;
+            if (splitType === 'custom') {
+                validateSplitInputs(group);
+            }
+        });
+    }
+
     // --- Amount input changes trigger validation ---
     const amountInput = document.getElementById('input-expense-amount');
     if (amountInput) {
         amountInput.addEventListener('input', () => {
+            const group = groups.find(g => g.id === currentGroupId);
+            if (!group) return;
             const splitType = document.getElementById('input-split-type').value;
-            if (splitType === 'custom' || splitType === 'percentage') {
-                validateSplitInputs();
+            // Update exchange rate conversion
+            const expCurrency = document.getElementById('input-expense-currency').value;
+            const baseCurrency = group.baseCurrency || 'INR';
+            if (expCurrency !== baseCurrency) {
+                updateConvertedAmountDisplay(baseCurrency, expCurrency);
             }
+            // Validate split inputs
+            validateSplitInputs(group);
         });
     }
 

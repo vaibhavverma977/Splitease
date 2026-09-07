@@ -52,6 +52,7 @@
                 <div class="group-title-wrapper">
                     <h2 id="group-title" class="group-title">Group</h2>
                     <button id="btn-rename-group" class="rename-btn" aria-label="Rename group">✎</button>
+                    <button id="btn-change-currency" class="currency-btn" aria-label="Change base currency">₹</button>
                 </div>
                 <button id="btn-delete-group" class="delete-group-btn" aria-label="Delete group">
                     <span class="delete-icon">✕</span>
@@ -130,6 +131,7 @@
                 <!-- BALANCES TAB -->
                 <div id="tab-balances" class="tab-panel">
                     <div class="balances-section">
+                        <!-- Summary will be rendered by JS -->
                         <div id="balances-summary" class="balances-summary">
                             <!-- Rendered by JS -->
                         </div>
@@ -174,8 +176,27 @@
                     <label for="input-expense-desc">Description</label>
                     <input type="text" id="input-expense-desc" placeholder="e.g. Dinner" maxlength="50" />
 
-                    <label for="input-expense-amount">Amount (₹)</label>
+                    <label for="input-expense-amount">Amount</label>
                     <input type="number" id="input-expense-amount" placeholder="0.00" min="0.01" step="0.01" />
+
+                    <label for="input-expense-currency">Currency</label>
+                    <select id="input-expense-currency">
+                        <option value="INR">₹ INR</option>
+                        <option value="USD">$ USD</option>
+                        <option value="EUR">€ EUR</option>
+                        <option value="GBP">£ GBP</option>
+                        <option value="AED">د.إ AED</option>
+                        <option value="JPY">¥ JPY</option>
+                        <option value="CAD">C$ CAD</option>
+                        <option value="AUD">A$ AUD</option>
+                        <option value="SGD">S$ SGD</option>
+                    </select>
+
+                    <div id="exchange-rate-group" style="display:none;">
+                        <label for="input-exchange-rate">Exchange rate (1 <span id="exp-currency-label">USD</span> = ? <span id="base-currency-label">INR</span>)</label>
+                        <input type="number" id="input-exchange-rate" placeholder="e.g. 83.50" step="0.01" min="0.01" />
+                        <div id="converted-amount-display" style="font-size:13px;color:#64748b;margin-top:2px;"></div>
+                    </div>
 
                     <label for="input-expense-date">Date</label>
                     <input type="date" id="input-expense-date" />
@@ -200,6 +221,9 @@
                     <div id="split-inputs-container" class="split-inputs-container">
                         <!-- Rendered by JS based on split type and included members -->
                     </div>
+
+                    <!-- Custom Amount Summary -->
+                    <div id="custom-summary" class="custom-summary hidden"></div>
 
                     <label for="input-expense-notes">Notes (optional)</label>
                     <textarea id="input-expense-notes" placeholder="Add any extra details…" rows="2"></textarea>

@@ -114,7 +114,7 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 180px;
+    max-width: 140px;
 }
 
 .rename-btn {
@@ -131,6 +131,22 @@ body {
 .rename-btn:active {
     background: #eef2ff;
     color: #4f46e5;
+}
+
+.currency-btn {
+    background: none;
+    border: none;
+    font-size: 16px;
+    color: #4f46e5;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-weight: 600;
+    transition: background 0.1s;
+}
+
+.currency-btn:active {
+    background: #eef2ff;
 }
 
 .delete-group-btn {
@@ -670,6 +686,30 @@ body {
     gap: 20px;
 }
 
+.balance-summary-top {
+    display: flex;
+    justify-content: space-around;
+    background: #f1f5f9;
+    border-radius: 12px;
+    padding: 12px;
+    font-size: 14px;
+}
+
+.balance-summary-top .summary-item {
+    text-align: center;
+}
+
+.balance-summary-top .summary-label {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.balance-summary-top .summary-value {
+    font-weight: 600;
+    font-size: 16px;
+    color: #0f172a;
+}
+
 .balances-summary {
     display: flex;
     flex-direction: column;
@@ -712,7 +752,8 @@ body {
 
 .balance-item .balance-details {
     display: flex;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 12px 16px;
     margin-top: 4px;
     font-size: 13px;
     color: #64748b;
@@ -721,6 +762,22 @@ body {
 .balance-item .balance-details span {
     display: flex;
     gap: 4px;
+}
+
+.balance-item .balance-action {
+    font-size: 14px;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.balance-item .balance-action.positive {
+    color: #16a34a;
+}
+.balance-item .balance-action.negative {
+    color: #dc2626;
+}
+.balance-item .balance-action.zero {
+    color: #94a3b8;
 }
 
 .settlement-section {
@@ -757,6 +814,7 @@ body {
 
 .settlement-item .from-to {
     color: #334155;
+    font-weight: 500;
 }
 
 .settlement-item .amount {
@@ -915,7 +973,7 @@ body {
     accent-color: #4f46e5;
 }
 
-/* ===== SPLIT INPUTS ===== */
+/* ===== SPLIT INPUTS & SUMMARY ===== */
 .split-inputs-container {
     margin-top: 4px;
     display: flex;
@@ -957,6 +1015,37 @@ body {
     font-size: 14px;
     color: #64748b;
     min-width: 24px;
+}
+
+.custom-summary {
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.custom-summary .summary-line {
+    display: flex;
+    justify-content: space-between;
+}
+
+.custom-summary .summary-line .label {
+    color: #64748b;
+}
+.custom-summary .summary-line .value {
+    font-weight: 500;
+}
+.custom-summary .summary-line.remaining .value {
+    font-weight: 600;
+}
+.custom-summary .summary-line.remaining.valid {
+    color: #16a34a;
+}
+.custom-summary .summary-line.remaining.invalid {
+    color: #dc2626;
 }
 
 .split-info {
@@ -1024,7 +1113,7 @@ body {
         min-width: 50px;
     }
     .group-title {
-        max-width: 140px;
+        max-width: 110px;
     }
     .expense-details {
         font-size: 12px;
@@ -1036,5 +1125,9 @@ body {
     .settlement-item {
         flex-wrap: wrap;
         gap: 4px;
+    }
+    .balance-summary-top {
+        flex-wrap: wrap;
+        gap: 8px;
     }
 }
