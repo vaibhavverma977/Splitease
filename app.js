@@ -1,7 +1,7 @@
 // ============================
-//  SplitEase - app.js (v1.3)
+//  SplitEase - app.js (v1.4)
 //  Offline-first expense splitting
-//  Multi-currency, custom amount live summary, redesigned balances, tab fix
+//  Multi-payer support, mobile responsive fix
 // ============================
 
 // ---- DATA LAYER ----
@@ -45,6 +45,22 @@ function loadData() {
                     if (g.settledAt === undefined) g.settledAt = null;
                     if (!g.paymentStatus) g.paymentStatus = {};
                     if (!g.baseCurrency) g.baseCurrency = 'INR';
+                    // Convert old single-payer expenses to payers array
+                    if (g.expenses) {
+                        g.expenses.forEach(exp => {
+                            if (!exp.payers && exp.payer) {
+                                // Convert single payer to payers array
+                                const amt = exp.originalAmount || exp.amount;
+                                exp.payers = [{ member: exp.payer, amount: amt }];
+                                // Remove old payer field to avoid confusion, but keep for backward compatibility if needed
+                                // We'll keep it but ignore if payers exists.
+                            }
+                            if (!exp.payers) {
+                                // Fallback: if no payers and no payer, set empty array? but shouldn't happen.
+                                exp.payers = [];
+                            }
+                        });
+                    }
                 });
                 return;
             }
@@ -101,7 +117,7 @@ function showGroupView(groupId) {
     document.getElementById('home-view').classList.remove('active');
     document.getElementById('group-view').classList.add('active');
     currentGroupId = groupId;
-    currentTab = 'members'; // default tab when opening group
+    currentTab = 'members';
     renderGroup(groupId);
 }
 
@@ -114,7 +130,6 @@ function renderHome() {
     const emptyDesc = document.getElementById('empty-desc');
     container.innerHTML = '';
 
-    // Filter groups by status
     const filtered = groups.filter(g => (g.status || 'open') === currentStatusFilter);
 
     if (filtered.length === 0) {
@@ -146,7 +161,6 @@ function renderHome() {
         let totalSpent = 0;
         if (group.expenses) {
             group.expenses.forEach(e => {
-                // Use baseAmount if available, else amount (backward compat)
                 totalSpent += (e.baseAmount !== undefined ? e.baseAmount : e.amount);
             });
         }
@@ -190,7 +204,6 @@ function renderGroup(groupId) {
     }
 
     document.getElementById('group-title').textContent = group.name;
-    // Update currency button text
     const currencyBtn = document.getElementById('btn-change-currency');
     currencyBtn.textContent = getCurrencySymbol(group.baseCurrency || 'INR');
 
@@ -200,7 +213,6 @@ function renderGroup(groupId) {
     renderOverview(group);
     renderBalances(group);
     populateExpenseModal(group);
-    // Keep current tab active
     switchTab(currentTab);
 }
 
@@ -316,8 +328,9 @@ function removeMember(groupId, memberName) {
     const group = groups.find(g => g.id === groupId);
     if (!group) return;
 
-    // Check if member is used in any expense
     const isUsed = group.expenses.some(exp => {
+        // Check if member appears in payers or splits
+        if (exp.payers && exp.payers.some(p => p.member === memberName)) return true;
         if (exp.payer === memberName) return true;
         if (exp.splitType === 'equal') {
             return (exp.included || []).includes(memberName);
@@ -369,14 +382,22 @@ function renderExpenses(group) {
 
         const details = document.createElement('div');
         details.className = 'expense-details';
-        const payer = exp.payer || 'Unknown';
+        // Show payers summary
+        let payerStr = '';
+        if (exp.payers && exp.payers.length > 0) {
+            const payerNames = exp.payers.map(p => p.member).join(', ');
+            payerStr = `Paid by ${payerNames}`;
+        } else if (exp.payer) {
+            payerStr = `Paid by ${exp.payer}`;
+        } else {
+            payerStr = 'Paid by unknown';
+        }
         const dateStr = exp.date ? formatDate(exp.date) : '';
         const datePart = dateStr ? ` · ${dateStr}` : '';
         let splitTypeLabel = 'Equal';
         if (exp.splitType === 'percentage') splitTypeLabel = 'Percentage';
         else if (exp.splitType === 'custom') splitTypeLabel = 'Custom';
 
-        // FIX 2: Compare against group.baseCurrency instead of hardcoded 'INR'
         let amountDisplay = '';
         if (exp.originalCurrency && exp.originalCurrency !== group.baseCurrency) {
             const origSym = getCurrencySymbol(exp.originalCurrency);
@@ -386,7 +407,7 @@ function renderExpenses(group) {
         }
 
         details.innerHTML = `
-            <span>Paid by ${payer}${datePart}</span>
+            <span>${payerStr}${datePart}</span>
             <span class="split-type-badge">${splitTypeLabel}</span>
         `;
 
@@ -456,7 +477,6 @@ function openEditExpenseModal(groupId, expenseId) {
     const currencySelect = document.getElementById('input-expense-currency');
     const expCurrency = expense.originalCurrency || 'INR';
     currencySelect.value = expCurrency;
-    // Show/hide exchange rate group
     const baseCurrency = group.baseCurrency || 'INR';
     if (expCurrency !== baseCurrency) {
         document.getElementById('exchange-rate-group').style.display = 'block';
@@ -466,9 +486,9 @@ function openEditExpenseModal(groupId, expenseId) {
         document.getElementById('exchange-rate-group').style.display = 'none';
     }
 
-    // Payer
-    const payerSelect = document.getElementById('input-expense-payer');
-    payerSelect.value = expense.payer || '';
+    // Populate payers
+    const payers = expense.payers || (expense.payer ? [{ member: expense.payer, amount: expense.originalAmount || expense.amount }] : []);
+    renderPayerRows(group, payers);
 
     // Included checkboxes
     const includedMembers = expense.included || [];
@@ -488,13 +508,163 @@ function openEditExpenseModal(groupId, expenseId) {
     openModal('modal-add-expense');
 }
 
+// ---- PAYER ROWS ----
+
+function renderPayerRows(group, existingPayers) {
+    const container = document.getElementById('payers-container');
+    container.innerHTML = '';
+    const members = group.members || [];
+
+    // If no existing payers, create one default row
+    if (!existingPayers || existingPayers.length === 0) {
+        existingPayers = [{ member: members.length > 0 ? members[0] : '', amount: '' }];
+    }
+
+    existingPayers.forEach((payer, index) => {
+        const row = document.createElement('div');
+        row.className = 'payer-row';
+        row.dataset.index = index;
+
+        const select = document.createElement('select');
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = 'Select member';
+        select.appendChild(emptyOpt);
+        members.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            if (m === payer.member) opt.selected = true;
+            select.appendChild(opt);
+        });
+        // Disable already selected members in other rows
+        select.addEventListener('change', () => {
+            updatePayerRows(group);
+        });
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = '0.01';
+        input.min = '0';
+        input.placeholder = 'Amount';
+        input.value = payer.amount !== undefined ? payer.amount : '';
+        input.addEventListener('input', () => {
+            updatePayerSummary(group);
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-payer';
+        removeBtn.textContent = '✕';
+        removeBtn.setAttribute('aria-label', 'Remove payer');
+        if (existingPayers.length === 1) {
+            removeBtn.style.visibility = 'hidden';
+        } else {
+            removeBtn.addEventListener('click', () => {
+                container.removeChild(row);
+                updatePayerRows(group);
+                updatePayerSummary(group);
+            });
+        }
+
+        row.appendChild(select);
+        row.appendChild(input);
+        row.appendChild(removeBtn);
+        container.appendChild(row);
+    });
+
+    // Update select options to prevent duplicates
+    updatePayerRows(group);
+    updatePayerSummary(group);
+}
+
+function updatePayerRows(group) {
+    // Update each select to exclude members already used in other rows
+    const rows = document.querySelectorAll('.payer-row');
+    const selectedMembers = [];
+    rows.forEach(row => {
+        const select = row.querySelector('select');
+        const currentVal = select.value;
+        if (currentVal) selectedMembers.push(currentVal);
+    });
+
+    rows.forEach(row => {
+        const select = row.querySelector('select');
+        const currentVal = select.value;
+        // Keep options
+        const options = select.querySelectorAll('option');
+        options.forEach(opt => {
+            if (opt.value === '') {
+                opt.disabled = false;
+                return;
+            }
+            // Disable if selected in another row and not the current row's value
+            if (selectedMembers.filter(v => v === opt.value).length > 1 && opt.value !== currentVal) {
+                opt.disabled = true;
+            } else {
+                opt.disabled = false;
+            }
+        });
+    });
+}
+
+function updatePayerSummary(group) {
+    const container = document.getElementById('payers-container');
+    const rows = container.querySelectorAll('.payer-row');
+    const summaryEl = document.getElementById('payer-summary');
+    const amountInput = document.getElementById('input-expense-amount');
+    const totalExpense = parseFloat(amountInput.value) || 0;
+    const currency = document.getElementById('input-expense-currency').value;
+
+    let allocated = 0;
+    rows.forEach(row => {
+        const input = row.querySelector('input');
+        const val = parseFloat(input.value);
+        if (!isNaN(val) && val > 0) {
+            allocated += val;
+        }
+    });
+
+    const remaining = totalExpense - allocated;
+
+    if (totalExpense > 0) {
+        summaryEl.classList.remove('hidden');
+        const remainingClass = Math.abs(remaining) < 0.001 ? 'valid' : 'invalid';
+        summaryEl.innerHTML = `
+            <div class="summary-line">
+                <span class="label">Expense Total:</span>
+                <span class="value">${formatCurrency(totalExpense, currency)}</span>
+            </div>
+            <div class="summary-line">
+                <span class="label">Paid by members:</span>
+                <span class="value">${formatCurrency(allocated, currency)}</span>
+            </div>
+            <div class="summary-line remaining ${remainingClass}">
+                <span class="label">Remaining:</span>
+                <span class="value">${formatCurrency(remaining, currency)}</span>
+            </div>
+        `;
+        // Show validation message in split-error if not matching
+        const errorEl = document.getElementById('split-error');
+        if (Math.abs(remaining) > 0.001) {
+            errorEl.textContent = `Payer amounts must equal the expense total (${formatCurrency(totalExpense, currency)}).`;
+            errorEl.classList.remove('hidden');
+        } else {
+            errorEl.classList.add('hidden');
+        }
+    } else {
+        summaryEl.classList.add('hidden');
+        document.getElementById('split-error').classList.add('hidden');
+    }
+}
+
+// ---- ADD/EDIT EXPENSE ----
+
 function addExpense() {
     const descInput = document.getElementById('input-expense-desc');
     const amountInput = document.getElementById('input-expense-amount');
     const currencySelect = document.getElementById('input-expense-currency');
     const exchangeRateInput = document.getElementById('input-exchange-rate');
     const dateInput = document.getElementById('input-expense-date');
-    const payerSelect = document.getElementById('input-expense-payer');
     const splitTypeSelect = document.getElementById('input-split-type');
     const notesInput = document.getElementById('input-expense-notes');
     const checkboxes = document.querySelectorAll('#expense-included-list input[type="checkbox"]');
@@ -504,7 +674,6 @@ function addExpense() {
     const amount = parseFloat(amountInput.value);
     const currency = currencySelect.value;
     const date = dateInput.value || getToday();
-    const payer = payerSelect.value;
     const splitType = splitTypeSelect.value;
     const notes = notesInput.value.trim();
 
@@ -521,11 +690,6 @@ function addExpense() {
     }
     if (isNaN(amount) || amount <= 0) {
         errorEl.textContent = 'Please enter a valid positive amount.';
-        errorEl.classList.remove('hidden');
-        return;
-    }
-    if (!payer) {
-        errorEl.textContent = 'Please select who paid.';
         errorEl.classList.remove('hidden');
         return;
     }
@@ -557,20 +721,49 @@ function addExpense() {
         originalCurrency = currency;
     }
 
+    // Read payer rows
+    const payerRows = document.querySelectorAll('.payer-row');
+    const payers = [];
+    let payerTotal = 0;
+    payerRows.forEach(row => {
+        const select = row.querySelector('select');
+        const input = row.querySelector('input');
+        const member = select.value;
+        const amt = parseFloat(input.value);
+        if (member && !isNaN(amt) && amt >= 0) {
+            payers.push({ member, amount: amt });
+            payerTotal += amt;
+        }
+    });
+
+    // Validate payer total equals expense amount
+    if (Math.abs(payerTotal - amount) > 0.001) {
+        errorEl.textContent = `Payer amounts (${formatCurrency(payerTotal, currency)}) must equal the expense total (${formatCurrency(amount, currency)}).`;
+        errorEl.classList.remove('hidden');
+        return;
+    }
+
+    if (payers.length === 0) {
+        errorEl.textContent = 'Please add at least one payer.';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+
     // Build expense object
     let expenseData = {
         description,
-        amount: baseAmount, // store base amount for calculations
+        amount: baseAmount,
         date,
-        payer,
         splitType,
         notes,
         originalCurrency,
         originalAmount,
         exchangeRate,
-        baseAmount // store explicitly
+        baseAmount,
+        payers: payers.map(p => ({ member: p.member, amount: p.amount }))
     };
 
+    // Handle split type
     if (splitType === 'equal') {
         expenseData.included = included;
     } else {
@@ -613,9 +806,8 @@ function addExpense() {
             }
             expenseData.splits = splits;
         } else if (splitType === 'custom') {
-            // For custom split, the amounts are in the original currency? We'll keep as entered.
-            // They must sum to the original amount (not base amount)
-            // Validate against originalAmount
+            // Custom amounts are in the original currency? Actually we use the same as split inputs: they are in expense currency.
+            // But we need to validate against originalAmount.
             if (Math.abs(total - originalAmount) > 0.001) {
                 errorEl.textContent = `Total custom amounts (${formatCurrency(total, currency)}) must equal expense amount (${formatCurrency(originalAmount, currency)}).`;
                 errorEl.classList.remove('hidden');
@@ -626,10 +818,7 @@ function addExpense() {
                 errorEl.classList.remove('hidden');
                 return;
             }
-            // Store splits in original currency
             expenseData.splits = splits;
-            // Also store splits in base currency for calculations?
-            // We'll convert splits to base amounts in calculateExpenseShares
         }
     }
 
@@ -672,7 +861,6 @@ function renderOverview(group) {
     const totalSpan = document.getElementById('total-spending');
     const empty = document.getElementById('overview-empty');
 
-    // Compute spending by member (in base currency)
     const spending = calculateSpendingByMember(group);
     const total = Object.values(spending).reduce((sum, val) => sum + val, 0);
     const baseCurrency = group.baseCurrency || 'INR';
@@ -791,19 +979,16 @@ function renderBalances(group) {
     const balances = calculateBalances(group);
     const baseCurrency = group.baseCurrency || 'INR';
 
-    // Compute summary
     let totalToReceive = 0, totalToPay = 0, pendingCount = 0;
     const settlement = calculateSettlement(group);
     pendingCount = settlement.length;
 
-    // Calculate totals from balances
     group.members.forEach(m => {
         const net = balances[m]?.net || 0;
         if (net > 0.005) totalToReceive += net;
         else if (net < -0.005) totalToPay += Math.abs(net);
     });
 
-    // Summary
     const summaryDiv = document.createElement('div');
     summaryDiv.className = 'balance-summary-top';
     summaryDiv.innerHTML = `
@@ -822,7 +1007,6 @@ function renderBalances(group) {
     `;
     container.appendChild(summaryDiv);
 
-    // Individual balances
     const sortedMembers = [...group.members].sort((a, b) => {
         return (balances[b]?.net || 0) - (balances[a]?.net || 0);
     });
@@ -882,7 +1066,6 @@ function renderBalances(group) {
         container.appendChild(item);
     });
 
-    // Settlement list
     if (settlement.length === 0) {
         const msg = document.createElement('div');
         msg.className = 'settlement-item';
@@ -958,7 +1141,6 @@ function togglePayment(groupId, key) {
 
     group.paymentStatus[key] = !group.paymentStatus[key];
     saveData();
-    // Re-render group but keep current tab
     currentTab = 'balances';
     renderGroup(groupId);
 }
@@ -966,7 +1148,6 @@ function togglePayment(groupId, key) {
 // ---- CALCULATION FUNCTIONS ----
 
 function calculateExpenseShares(expense) {
-    // Returns an object { member: share } in base currency
     const amount = expense.baseAmount !== undefined ? expense.baseAmount : expense.amount;
     const splitType = expense.splitType || 'equal';
     let shares = {};
@@ -986,7 +1167,6 @@ function calculateExpenseShares(expense) {
             shares[person] = (splits[person] / totalPct) * amount;
         });
     } else if (splitType === 'custom') {
-        // splits are in original currency; convert to base using exchange rate
         const splits = expense.splits || {};
         const exchangeRate = expense.exchangeRate || 1;
         Object.keys(splits).forEach(person => {
@@ -1008,14 +1188,18 @@ function calculateBalances(group) {
     if (!group.expenses) return balances;
 
     group.expenses.forEach(exp => {
-        const amount = exp.baseAmount !== undefined ? exp.baseAmount : exp.amount;
-        const payer = exp.payer;
+        // Calculate total paid per member from payers
+        const payers = exp.payers || [];
+        payers.forEach(p => {
+            const member = p.member;
+            const amt = p.amount * (exp.exchangeRate || 1); // Convert to base currency
+            if (balances[member]) {
+                balances[member].paid += amt;
+            }
+        });
+
+        // Calculate shares (using existing logic)
         const shares = calculateExpenseShares(exp);
-
-        if (balances[payer]) {
-            balances[payer].paid += amount;
-        }
-
         Object.keys(shares).forEach(person => {
             if (balances[person]) {
                 balances[person].share += shares[person];
@@ -1077,11 +1261,13 @@ function calculateSpendingByMember(group) {
     if (!group.expenses) return spending;
 
     group.expenses.forEach(exp => {
-        const payer = exp.payer;
-        const amount = exp.baseAmount !== undefined ? exp.baseAmount : exp.amount;
-        if (spending[payer] !== undefined) {
-            spending[payer] += amount;
-        }
+        const payers = exp.payers || [];
+        payers.forEach(p => {
+            const amount = p.amount * (exp.exchangeRate || 1);
+            if (spending[p.member] !== undefined) {
+                spending[p.member] += amount;
+            }
+        });
     });
 
     return spending;
@@ -1108,26 +1294,15 @@ function updateConvertedAmountDisplay(baseCurrency, expCurrency) {
 // ---- POPULATE EXPENSE MODAL (for new expense) ----
 
 function populateExpenseModal(group) {
-    const payerSelect = document.getElementById('input-expense-payer');
+    // Included people checkboxes
     const includedContainer = document.getElementById('expense-included-list');
-
-    payerSelect.innerHTML = '';
     includedContainer.innerHTML = '';
 
     const members = group.members || [];
     if (members.length === 0) {
-        payerSelect.innerHTML = '<option value="">No members</option>';
         includedContainer.innerHTML = '<span style="font-size:13px;color:#94a3b8;">Add members first</span>';
         return;
     }
-
-    members.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        payerSelect.appendChild(opt);
-    });
-    payerSelect.value = members[0] || '';
 
     members.forEach(m => {
         const label = document.createElement('label');
@@ -1152,12 +1327,14 @@ function populateExpenseModal(group) {
     // Currency defaults
     const baseCurrency = group.baseCurrency || 'INR';
     const currencySelect = document.getElementById('input-expense-currency');
-    currencySelect.value = baseCurrency; // default to base currency
+    currencySelect.value = baseCurrency;
     document.getElementById('exchange-rate-group').style.display = 'none';
     document.getElementById('converted-amount-display').textContent = '';
-
-    // Set labels for exchange rate
     document.getElementById('base-currency-label').textContent = baseCurrency;
+
+    // Initialize payers with one row
+    const firstMember = members.length > 0 ? members[0] : '';
+    renderPayerRows(group, [{ member: firstMember, amount: '' }]);
 
     renderSplitInputs(group, null);
 }
@@ -1197,8 +1374,6 @@ function renderSplitInputs(group, expenseData) {
     const currency = document.getElementById('input-expense-currency').value;
     const splits = expenseData?.splits || {};
 
-    // Determine if we should show amounts in original or base currency
-    // For custom split, amounts are entered in the expense currency.
     const displayCurrency = currency;
 
     included.forEach(member => {
@@ -1240,23 +1415,19 @@ function renderSplitInputs(group, expenseData) {
         container.appendChild(row);
     });
 
-    // For custom, show summary
     if (splitType === 'custom') {
         summaryEl.classList.remove('hidden');
-        // Also attach listener to amount and currency changes to update summary
         amountInput.addEventListener('input', () => {
             validateSplitInputs(group);
         });
         document.getElementById('input-expense-currency').addEventListener('change', () => {
             validateSplitInputs(group);
         });
-        // Initial validation
         validateSplitInputs(group);
     } else {
         summaryEl.classList.add('hidden');
     }
 
-    // For percentage, we can show info but not summary
     if (splitType === 'percentage') {
         validateSplitInputs(group);
     }
@@ -1315,13 +1486,10 @@ function validateSplitInputs(group) {
             infoEl.classList.add('hidden');
         } else {
             errorEl.classList.add('hidden');
-            // Show computed amounts in base currency
             const baseCurrency = group?.baseCurrency || 'INR';
             const perPerson = Object.keys(values).map(member => {
                 const pct = values[member];
-                const amt = (pct / 100) * totalAmount; // totalAmount is in base currency? Actually amount is in base currency.
-                // But if expense is in foreign currency, totalAmount is in foreign currency, and we need to convert?
-                // We'll use the exchange rate.
+                const amt = (pct / 100) * totalAmount;
                 const exchangeRate = parseFloat(document.getElementById('input-exchange-rate').value) || 1;
                 const baseAmt = totalAmount * exchangeRate;
                 const shareBase = (pct / 100) * baseAmt;
@@ -1334,14 +1502,11 @@ function validateSplitInputs(group) {
             summaryEl.classList.add('hidden');
         }
     } else if (splitType === 'custom') {
-        // Custom split: show allocated and remaining
         const expenseAmount = parseFloat(document.getElementById('input-expense-amount').value) || 0;
         const exchangeRate = parseFloat(document.getElementById('input-exchange-rate').value) || 1;
-        // Values are in original currency
         const allocated = total;
         const remaining = expenseAmount - allocated;
 
-        // Update summary
         const summaryHtml = `
             <div class="summary-line">
                 <span class="label">Expense Total:</span>
@@ -1359,10 +1524,8 @@ function validateSplitInputs(group) {
         summaryEl.innerHTML = summaryHtml;
         summaryEl.classList.remove('hidden');
 
-        // Validate
         if (Math.abs(remaining) < 0.001) {
             errorEl.classList.add('hidden');
-            // All good
         } else if (remaining > 0) {
             errorEl.textContent = `Please allocate the remaining ${formatCurrency(remaining, currency)}.`;
             errorEl.classList.remove('hidden');
@@ -1392,7 +1555,6 @@ function closeModal(modalId) {
 // ---- TAB SWITCHING ----
 
 function switchTab(tabName) {
-    // Update stored current tab
     currentTab = tabName;
 
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1407,7 +1569,6 @@ function switchTab(tabName) {
     const activePanel = document.getElementById(`tab-${tabName}`);
     if (activePanel) activePanel.classList.add('active');
 
-    // If overview tab, re-render to update chart
     if (tabName === 'overview') {
         const group = groups.find(g => g.id === currentGroupId);
         if (group) renderOverview(group);
@@ -1512,14 +1673,13 @@ function init() {
         });
     }
 
-    // --- Change base currency (FIX 1 applied) ---
+    // --- Change base currency ---
     const currencyBtn = document.getElementById('btn-change-currency');
     if (currencyBtn) {
         currencyBtn.addEventListener('click', () => {
             const group = groups.find(g => g.id === currentGroupId);
             if (!group) return;
 
-            // FIX 1: Prevent change if group has any expenses
             if (group.expenses && group.expenses.length > 0) {
                 alert('Base currency can\'t be changed after expenses have been added.');
                 return;
@@ -1586,7 +1746,6 @@ function init() {
             document.getElementById('split-error').classList.add('hidden');
             document.getElementById('split-info').classList.add('hidden');
             document.getElementById('input-split-type').value = 'equal';
-            // Reset exchange rate group
             document.getElementById('exchange-rate-group').style.display = 'none';
             document.getElementById('converted-amount-display').textContent = '';
             renderSplitInputs(group, null);
@@ -1633,12 +1792,11 @@ function init() {
                 document.getElementById('exchange-rate-group').style.display = 'block';
                 document.getElementById('base-currency-label').textContent = baseCurrency;
                 document.getElementById('exp-currency-label').textContent = expCurrency;
-                // Update conversion display
                 updateConvertedAmountDisplay(baseCurrency, expCurrency);
             }
-            // Re-validate custom split summary
             const groupObj = groups.find(g => g.id === currentGroupId);
             validateSplitInputs(groupObj);
+            updatePayerSummary(groupObj);
         });
     }
 
@@ -1653,11 +1811,11 @@ function init() {
             if (expCurrency !== baseCurrency) {
                 updateConvertedAmountDisplay(baseCurrency, expCurrency);
             }
-            // Re-validate custom split summary if custom
             const splitType = document.getElementById('input-split-type').value;
             if (splitType === 'custom') {
                 validateSplitInputs(group);
             }
+            updatePayerSummary(group);
         });
     }
 
@@ -1668,16 +1826,36 @@ function init() {
             const group = groups.find(g => g.id === currentGroupId);
             if (!group) return;
             const splitType = document.getElementById('input-split-type').value;
-            // Update exchange rate conversion
             const expCurrency = document.getElementById('input-expense-currency').value;
             const baseCurrency = group.baseCurrency || 'INR';
             if (expCurrency !== baseCurrency) {
                 updateConvertedAmountDisplay(baseCurrency, expCurrency);
             }
-            // Validate split inputs
             validateSplitInputs(group);
+            updatePayerSummary(group);
         });
     }
+
+    // --- Add payer button ---
+    document.getElementById('btn-add-payer').addEventListener('click', () => {
+        const group = groups.find(g => g.id === currentGroupId);
+        if (!group) return;
+        // Get existing payers
+        const rows = document.querySelectorAll('.payer-row');
+        const existingPayers = [];
+        rows.forEach(row => {
+            const select = row.querySelector('select');
+            const input = row.querySelector('input');
+            const member = select.value;
+            const amt = parseFloat(input.value) || 0;
+            if (member) {
+                existingPayers.push({ member, amount: amt });
+            }
+        });
+        // Add a new empty payer row
+        existingPayers.push({ member: '', amount: '' });
+        renderPayerRows(group, existingPayers);
+    });
 
     // --- Modal close buttons ---
     document.querySelectorAll('.modal-close').forEach(btn => {
@@ -1712,4 +1890,4 @@ function init() {
 }
 
 // ---- START ----
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', init); 

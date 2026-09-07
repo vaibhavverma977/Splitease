@@ -15,7 +15,7 @@
         <section id="home-view" class="view active">
             <header class="app-header">
                 <div class="header-left">
-                    <!-- New Logo SVG -->
+                    <!-- Logo SVG -->
                     <span class="app-icon">
                         <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
                             <circle cx="13" cy="16" r="9" fill="#4f46e5" opacity="0.8"/>
@@ -27,7 +27,7 @@
                         <span class="split-part">Split</span><span class="ease-part">Ease</span>
                     </h1>
                 </div>
-                <!-- Removed "share fairly" span -->
+                <!-- Removed "share fairly" -->
             </header>
 
             <div class="home-content">
@@ -204,8 +204,13 @@
                     <label for="input-expense-date">Date</label>
                     <input type="date" id="input-expense-date" />
 
-                    <label for="input-expense-payer">Paid by</label>
-                    <select id="input-expense-payer"></select>
+                    <!-- Multiple Payers -->
+                    <label class="label-inline">Paid by</label>
+                    <div id="payers-container" class="payers-container">
+                        <!-- Payer rows will be rendered here -->
+                    </div>
+                    <button id="btn-add-payer" class="btn-add-payer" type="button">+ Add another payer</button>
+                    <div id="payer-summary" class="payer-summary hidden"></div>
 
                     <label class="label-inline">Included people</label>
                     <div id="expense-included-list" class="checkbox-group">
