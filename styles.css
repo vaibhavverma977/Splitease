@@ -27,6 +27,7 @@ body {
     position: relative;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden; /* Prevent horizontal overflow */
 }
 
 /* ===== VIEWS ===== */
@@ -36,6 +37,7 @@ body {
     flex: 1;
     padding: 16px 16px 80px;
     background: #ffffff;
+    max-width: 100%;
 }
 
 .view.active {
@@ -55,6 +57,7 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+    min-width: 0; /* allow shrinking */
 }
 
 .app-icon {
@@ -79,6 +82,7 @@ body {
     color: #0f172a;
     display: flex;
     align-items: baseline;
+    white-space: nowrap;
 }
 
 .split-part {
@@ -99,6 +103,7 @@ body {
     justify-content: space-between;
     padding: 12px 0 16px;
     border-bottom: 1px solid #e9edf2;
+    max-width: 100%;
 }
 
 .back-btn {
@@ -111,6 +116,7 @@ body {
     padding: 4px 8px;
     border-radius: 8px;
     transition: background 0.1s;
+    flex-shrink: 0;
 }
 
 .back-btn:active {
@@ -123,6 +129,7 @@ body {
     gap: 6px;
     flex: 1;
     justify-content: center;
+    min-width: 0; /* allow shrinking */
 }
 
 .group-title {
@@ -144,6 +151,7 @@ body {
     padding: 2px 6px;
     border-radius: 6px;
     transition: background 0.1s;
+    flex-shrink: 0;
 }
 
 .rename-btn:active {
@@ -161,6 +169,7 @@ body {
     border-radius: 6px;
     font-weight: 600;
     transition: background 0.1s;
+    flex-shrink: 0;
 }
 
 .currency-btn:active {
@@ -176,6 +185,7 @@ body {
     padding: 4px 8px;
     border-radius: 8px;
     transition: background 0.1s;
+    flex-shrink: 0;
 }
 
 .delete-group-btn:active {
@@ -217,6 +227,7 @@ body {
 .home-content {
     flex: 1;
     padding-top: 4px;
+    max-width: 100%;
 }
 
 .groups-list {
@@ -245,12 +256,16 @@ body {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
 }
 
 .group-card-name {
     font-size: 17px;
     font-weight: 500;
     color: #0f172a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .group-card-meta {
@@ -270,6 +285,7 @@ body {
 .group-card-arrow {
     font-size: 22px;
     color: #94a3b8;
+    flex-shrink: 0;
 }
 
 .empty-state {
@@ -376,6 +392,7 @@ body {
     border-radius: 30px;
     padding: 4px;
     margin: 12px 0 12px;
+    max-width: 100%;
 }
 
 .tab-btn {
@@ -389,6 +406,8 @@ body {
     color: #64748b;
     cursor: pointer;
     transition: background 0.1s, color 0.1s;
+    text-align: center;
+    min-width: 0; /* allow shrinking */
 }
 
 .tab-btn.active {
@@ -403,6 +422,7 @@ body {
 
 .tab-content {
     flex: 1;
+    max-width: 100%;
 }
 
 .tab-panel {
@@ -410,6 +430,7 @@ body {
     flex-direction: column;
     gap: 16px;
     padding-top: 4px;
+    max-width: 100%;
 }
 
 .tab-panel.active {
@@ -421,6 +442,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    max-width: 100%;
 }
 
 .members-list {
@@ -441,6 +463,9 @@ body {
 .member-item-name {
     font-size: 15px;
     font-weight: 450;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .remove-member-btn {
@@ -451,6 +476,7 @@ body {
     cursor: pointer;
     padding: 0 4px;
     transition: color 0.1s;
+    flex-shrink: 0;
 }
 
 .remove-member-btn:active {
@@ -461,6 +487,7 @@ body {
     display: flex;
     gap: 8px;
     margin-top: 4px;
+    flex-wrap: wrap;
 }
 
 .add-member-row input {
@@ -472,6 +499,7 @@ body {
     background: #fff;
     outline: none;
     transition: border 0.1s;
+    min-width: 100px;
 }
 
 .add-member-row input:focus {
@@ -510,6 +538,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    max-width: 100%;
 }
 
 .expenses-list {
@@ -525,6 +554,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    max-width: 100%;
 }
 
 .expense-info {
@@ -538,6 +568,9 @@ body {
 .expense-desc {
     font-weight: 500;
     font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .expense-details {
@@ -568,6 +601,7 @@ body {
     align-items: center;
     gap: 8px;
     margin-left: 8px;
+    flex-shrink: 0;
 }
 
 .expense-actions button {
@@ -596,6 +630,7 @@ body {
     color: #475569;
     cursor: pointer;
     transition: background 0.1s;
+    width: 100%;
 }
 
 .btn-add-expense:active {
@@ -607,6 +642,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    max-width: 100%;
 }
 
 .overview-total {
@@ -634,6 +670,7 @@ body {
     align-items: center;
     gap: 16px;
     padding: 12px 0;
+    max-width: 100%;
 }
 
 .pie-chart {
@@ -643,6 +680,7 @@ body {
     background: #e2e8f0;
     position: relative;
     overflow: hidden;
+    max-width: 100%;
 }
 
 .pie-chart svg {
@@ -674,6 +712,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    max-width: 100%;
 }
 
 .breakdown-item {
@@ -687,14 +726,19 @@ body {
 
 .breakdown-item .name {
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .breakdown-item .amount {
     font-weight: 500;
+    flex-shrink: 0;
 }
 
 .breakdown-item .percent {
     color: #64748b;
+    flex-shrink: 0;
 }
 
 /* ===== BALANCES ===== */
@@ -702,6 +746,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    max-width: 100%;
 }
 
 .balance-summary-top {
@@ -711,6 +756,8 @@ body {
     border-radius: 12px;
     padding: 12px;
     font-size: 14px;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .balance-summary-top .summary-item {
@@ -732,6 +779,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-width: 100%;
 }
 
 .balance-item {
@@ -740,6 +788,7 @@ body {
     padding: 12px 14px;
     background: #f8fafc;
     border-radius: 12px;
+    max-width: 100%;
 }
 
 .balance-item .balance-row {
@@ -751,11 +800,15 @@ body {
 .balance-item .name {
     font-weight: 600;
     font-size: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .balance-item .net {
     font-weight: 600;
     font-size: 16px;
+    flex-shrink: 0;
 }
 
 .balance-item .net.positive {
@@ -802,6 +855,7 @@ body {
     background: #f1f5f9;
     border-radius: 16px;
     padding: 16px;
+    max-width: 100%;
 }
 
 .settlement-section h4 {
@@ -824,6 +878,8 @@ body {
     padding: 8px 4px;
     border-bottom: 1px solid #e2e8f0;
     font-size: 14px;
+    flex-wrap: wrap;
+    gap: 4px;
 }
 
 .settlement-item:last-child {
@@ -875,6 +931,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-width: 100%;
 }
 
 .payer-row {
@@ -884,6 +941,7 @@ body {
     background: #f8fafc;
     padding: 6px 10px;
     border-radius: 8px;
+    flex-wrap: wrap;
 }
 
 .payer-row select {
@@ -894,6 +952,7 @@ body {
     font-size: 14px;
     background: #fff;
     outline: none;
+    min-width: 80px;
 }
 
 .payer-row input {
@@ -905,6 +964,7 @@ body {
     background: #fff;
     outline: none;
     width: 100%;
+    min-width: 60px;
 }
 
 .payer-row input:focus,
@@ -919,6 +979,7 @@ body {
     font-size: 18px;
     cursor: pointer;
     padding: 0 4px;
+    flex-shrink: 0;
 }
 
 .payer-row .remove-payer:active {
@@ -984,6 +1045,7 @@ body {
     justify-content: center;
     z-index: 100;
     padding: 20px;
+    overflow: hidden; /* prevent scroll on body */
 }
 
 .modal-overlay.open {
@@ -998,9 +1060,11 @@ body {
     padding: 20px 20px 30px;
     box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
     animation: slideUp 0.2s ease;
-    /* ---- FIX: Prevent clipping on small screens ---- */
     max-height: 90vh;
     overflow-y: auto;
+    /* Ensure no horizontal overflow */
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
 @keyframes slideUp {
@@ -1034,6 +1098,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    max-width: 100%;
 }
 
 .modal-body label {
@@ -1054,6 +1119,7 @@ body {
     outline: none;
     transition: border 0.1s;
     font-family: inherit;
+    max-width: 100%;
 }
 
 .modal-body input:focus,
@@ -1103,6 +1169,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-width: 100%;
 }
 
 .split-input-row {
@@ -1112,6 +1179,7 @@ body {
     background: #f8fafc;
     padding: 6px 12px;
     border-radius: 10px;
+    flex-wrap: wrap;
 }
 
 .split-input-row .member-label {
@@ -1129,6 +1197,7 @@ body {
     background: #fff;
     outline: none;
     width: 100%;
+    min-width: 60px;
 }
 
 .split-input-row input:focus {

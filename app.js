@@ -1,7 +1,7 @@
 // ============================
 //  SplitEase - app.js (v1.4)
 //  Offline-first expense splitting
-//  Multi-payer support, mobile responsive fix
+//  Multi-payer support, mobile scroll fix
 // ============================
 
 // ---- DATA LAYER ----
@@ -1510,7 +1510,14 @@ function validateSplitInputs(group) {
 
 function openModal(modalId) {
     const modal = document.getElementById(modalId);
-    if (modal) modal.classList.add('open');
+    if (modal) {
+        modal.classList.add('open');
+        // Reset scroll position to top
+        const sheet = modal.querySelector('.modal-sheet');
+        if (sheet) {
+            sheet.scrollTop = 0;
+        }
+    }
 }
 
 function closeModal(modalId) {
@@ -1697,7 +1704,6 @@ function init() {
         }
 
         // --- Add expense: open modal ---
-        // FIX: Ensure the Add Expense button listener is attached
         const addExpenseBtn = document.getElementById('btn-add-expense');
         if (addExpenseBtn) {
             addExpenseBtn.addEventListener('click', () => {
