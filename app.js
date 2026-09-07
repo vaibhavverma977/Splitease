@@ -1,7 +1,7 @@
 // ============================
-//  SplitEase - app.js (v1.5)
+//  SplitEase - app.js (v1.7)
 //  Offline-first expense splitting
-//  Multi-payer support, mobile scroll fix, payer dropdown improvement
+//  Multi-payer support, strict uniqueness (row-index based)
 // ============================
 
 // ---- DATA LAYER ----
@@ -497,19 +497,20 @@ function openEditExpenseModal(groupId, expenseId) {
     openModal('modal-add-expense');
 }
 
-// ---- PAYER ROWS ----
+// ---- PAYER ROWS (FIXED) ----
 
 function renderPayerRows(group, existingPayers) {
     const container = document.getElementById('payers-container');
     container.innerHTML = '';
     const members = group.members || [];
 
+    // Ensure we have at least one payer row
     if (!existingPayers || existingPayers.length === 0) {
         existingPayers = [{ member: members.length > 0 ? members[0] : '', amount: '' }];
     }
 
-    // Build a list of all selected members (non-empty)
-    const selectedMembers = existingPayers.map(p => p.member).filter(m => m !== '');
+    // Build an array of row data: each entry has { member, amount }
+    // We'll use the actual row index for uniqueness checks.
 
     existingPayers.forEach((payer, index) => {
         const row = document.createElement('div');
@@ -523,39 +524,52 @@ function renderPayerRows(group, existingPayers) {
         emptyOpt.textContent = 'Select member';
         select.appendChild(emptyOpt);
 
-        // Determine which members are used in other rows
-        const otherSelected = selectedMembers.filter((m, i) => i !== index && m !== '');
-        // Build available members: all members not used in other rows, plus the current row's own member
-        let availableMembers = members.filter(m => !otherSelected.includes(m) || m === payer.member);
-        // Ensure uniqueness and that the current member is included if it's not already
+        // Get the current selected member for this row
+        const currentMember = payer.member || '';
+
+        // Determine which members are selected in OTHER rows
+        const otherSelected = existingPayers
+            .filter((p, i) => i !== index)
+            .map(p => p.member)
+            .filter(m => m !== '');
+
+        // Available members = all members not used in other rows, PLUS the current row's own member if it exists
+        // (we want to keep the current selection even if it's not in the "available" set)
+        const availableMembers = members.filter(m => !otherSelected.includes(m) || m === currentMember);
+
+        // Remove duplicates
         const uniqueAvailable = [...new Set(availableMembers)];
-        // If the current member is not in the list (shouldn't happen), add it
-        if (payer.member && !uniqueAvailable.includes(payer.member)) {
-            uniqueAvailable.push(payer.member);
-        }
+
+        // If the current member is not in uniqueAvailable (i.e., it's a duplicate in other rows), we should NOT include it.
+        // So we filter out the currentMember if it's used elsewhere.
+        // We'll rebuild the options without forcing the current member.
+
+        // Create options
         uniqueAvailable.forEach(m => {
             const opt = document.createElement('option');
             opt.value = m;
             opt.textContent = m;
-            if (m === payer.member) opt.selected = true;
+            if (m === currentMember) {
+                opt.selected = true;
+            }
             select.appendChild(opt);
         });
 
-        // Set the selected value
-        if (payer.member && select.querySelector(`option[value="${payer.member}"]`)) {
-            select.value = payer.member;
-        } else if (payer.member) {
-            // If still not set, add it manually
-            const opt = document.createElement('option');
-            opt.value = payer.member;
-            opt.textContent = payer.member;
-            opt.selected = true;
-            select.appendChild(opt);
+        // If currentMember is not in uniqueAvailable, set select value to empty
+        if (currentMember && !uniqueAvailable.includes(currentMember)) {
+            select.value = '';
+        } else if (currentMember && uniqueAvailable.includes(currentMember)) {
+            select.value = currentMember;
+        } else {
+            select.value = '';
         }
 
         // Event listener for change
         select.addEventListener('change', function() {
-            // After changing, update other rows to reflect the new selection
+            // Update the existingPayers array with the new value
+            const newVal = this.value;
+            const rowIndex = parseInt(this.closest('.payer-row').dataset.index);
+            // We need to re-read the current rows from DOM and rebuild
             updatePayerRows(group);
             updatePayerSummary(group);
         });
@@ -579,7 +593,7 @@ function renderPayerRows(group, existingPayers) {
         } else {
             removeBtn.addEventListener('click', () => {
                 container.removeChild(row);
-                // Re-render to update options and button visibility
+                // Get current payers from remaining rows
                 const currentPayers = getCurrentPayers(group);
                 renderPayerRows(group, currentPayers);
                 updatePayerSummary(group);
@@ -595,8 +609,9 @@ function renderPayerRows(group, existingPayers) {
     // Update the "+ Add payer" button visibility
     const addBtn = document.getElementById('btn-add-payer');
     if (addBtn) {
-        const usedMembers = selectedMembers.filter(m => m !== '');
-        if (usedMembers.length >= members.length && members.length > 0) {
+        const usedMembers = existingPayers.map(p => p.member).filter(m => m !== '');
+        const uniqueUsed = [...new Set(usedMembers)];
+        if (uniqueUsed.length >= members.length && members.length > 0) {
             addBtn.style.display = 'none';
         } else {
             addBtn.style.display = '';
@@ -615,72 +630,89 @@ function getCurrentPayers(group) {
         const amt = parseFloat(input.value) || 0;
         if (member) {
             payers.push({ member, amount: amt });
+        } else {
+            // Still include the row with empty member (so we keep the row count)
+            payers.push({ member: '', amount: amt });
         }
     });
     return payers;
 }
 
 function updatePayerRows(group) {
+    // Get current rows from DOM
     const rows = document.querySelectorAll('.payer-row');
     const members = group.members || [];
 
-    // Get current selections from all rows
-    const selectedMembers = [];
+    // Build an array of current selections (including empty ones)
+    const rowData = [];
     rows.forEach(row => {
         const select = row.querySelector('select');
-        const val = select.value;
-        if (val) selectedMembers.push(val);
+        const member = select.value;
+        rowData.push({ member });
     });
 
+    // For each row, rebuild its options
     rows.forEach((row, index) => {
         const select = row.querySelector('select');
-        const currentVal = select.value;
-        // Determine used members in other rows
-        const otherSelected = selectedMembers.filter((m, i) => i !== index && m !== '');
-        // Build available members: all members not used in other rows, plus the current row's own member
-        let availableMembers = members.filter(m => !otherSelected.includes(m) || m === currentVal);
-        // Ensure uniqueness and include currentVal if missing
-        const uniqueAvailable = [...new Set(availableMembers)];
-        if (currentVal && !uniqueAvailable.includes(currentVal)) {
-            uniqueAvailable.push(currentVal);
-        }
+        const currentMember = rowData[index].member || '';
 
-        // Rebuild options
-        // Keep the empty option as the first child
+        // Determine which members are selected in OTHER rows
+        const otherSelected = rowData
+            .filter((data, i) => i !== index)
+            .map(data => data.member)
+            .filter(m => m !== '');
+
+        // Available members = all members not used in other rows, plus the current row's own member if it exists
+        const availableMembers = members.filter(m => !otherSelected.includes(m) || m === currentMember);
+        const uniqueAvailable = [...new Set(availableMembers)];
+
+        // Preserve the empty option
+        const emptyOpt = select.querySelector('option[value=""]');
+        // Remove all options except empty
         while (select.options.length > 0) {
             select.remove(0);
         }
         // Add empty option
-        const emptyOpt = document.createElement('option');
-        emptyOpt.value = '';
-        emptyOpt.textContent = 'Select member';
-        select.appendChild(emptyOpt);
+        const newEmpty = document.createElement('option');
+        newEmpty.value = '';
+        newEmpty.textContent = 'Select member';
+        select.appendChild(newEmpty);
 
         // Add available members
         uniqueAvailable.forEach(m => {
             const opt = document.createElement('option');
             opt.value = m;
             opt.textContent = m;
-            if (m === currentVal) opt.selected = true;
+            if (m === currentMember) {
+                opt.selected = true;
+            }
             select.appendChild(opt);
         });
 
-        // Ensure the current value is selected
-        if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
-            select.value = currentVal;
+        // If currentMember is not in uniqueAvailable, clear selection
+        if (currentMember && !uniqueAvailable.includes(currentMember)) {
+            select.value = '';
+        } else if (currentMember && uniqueAvailable.includes(currentMember)) {
+            select.value = currentMember;
+        } else {
+            select.value = '';
         }
     });
 
     // Update add button visibility
     const addBtn = document.getElementById('btn-add-payer');
     if (addBtn) {
-        const usedMembers = selectedMembers.filter(m => m !== '');
-        if (usedMembers.length >= members.length && members.length > 0) {
+        const usedMembers = rowData.map(data => data.member).filter(m => m !== '');
+        const uniqueUsed = [...new Set(usedMembers)];
+        if (uniqueUsed.length >= members.length && members.length > 0) {
             addBtn.style.display = 'none';
         } else {
             addBtn.style.display = '';
         }
     }
+
+    // Also update the payer summary (amounts)
+    updatePayerSummary(group);
 }
 
 function updatePayerSummary(group) {
@@ -798,16 +830,29 @@ function addExpense() {
     const payerRows = document.querySelectorAll('.payer-row');
     const payers = [];
     let payerTotal = 0;
+    const payerMembers = []; // for duplicate check
+    let hasDuplicate = false;
     payerRows.forEach(row => {
         const select = row.querySelector('select');
         const input = row.querySelector('input');
         const member = select.value;
         const amt = parseFloat(input.value);
         if (member && !isNaN(amt) && amt >= 0) {
+            if (payerMembers.includes(member)) {
+                hasDuplicate = true;
+            } else {
+                payerMembers.push(member);
+            }
             payers.push({ member, amount: amt });
             payerTotal += amt;
         }
     });
+
+    if (hasDuplicate) {
+        errorEl.textContent = 'Each member can be added as a payer only once.';
+        errorEl.classList.remove('hidden');
+        return;
+    }
 
     if (Math.abs(payerTotal - amount) > 0.001) {
         errorEl.textContent = `Payer amounts (${formatCurrency(payerTotal, currency)}) must equal the expense total (${formatCurrency(amount, currency)}).`;
@@ -1924,10 +1969,12 @@ function init() {
                     const amt = parseFloat(input.value) || 0;
                     if (member) {
                         existingPayers.push({ member, amount: amt });
+                    } else {
+                        existingPayers.push({ member: '', amount: amt });
                     }
                 });
                 // Check if there are still unused members
-                const selectedMembers = existingPayers.map(p => p.member);
+                const selectedMembers = existingPayers.map(p => p.member).filter(m => m !== '');
                 const available = group.members.filter(m => !selectedMembers.includes(m));
                 if (available.length === 0) {
                     // Should not happen because button is hidden when no available members
