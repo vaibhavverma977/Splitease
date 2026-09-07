@@ -149,9 +149,40 @@ body {
 }
 
 /* ===== HOME ===== */
+.status-toggle-bar {
+    display: flex;
+    background: #f1f5f9;
+    border-radius: 30px;
+    padding: 4px;
+    margin: 12px 0 12px;
+}
+
+.status-btn {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    background: transparent;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #64748b;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+
+.status-btn.active {
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+
+.status-btn:active {
+    opacity: 0.7;
+}
+
 .home-content {
     flex: 1;
-    padding-top: 12px;
+    padding-top: 4px;
 }
 
 .groups-list {
@@ -191,6 +222,15 @@ body {
 .group-card-meta {
     font-size: 13px;
     color: #64748b;
+}
+
+.group-card-meta .settled-badge {
+    background: #dcfce7;
+    color: #16a34a;
+    padding: 0 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    margin-left: 4px;
 }
 
 .group-card-arrow {
@@ -260,13 +300,48 @@ body {
     line-height: 1;
 }
 
+/* ===== GROUP STATUS ACTION ===== */
+.group-status-action {
+    padding: 8px 0 12px;
+    border-bottom: 1px solid #e9edf2;
+}
+
+.group-status-action .status-btn-action {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 30px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.group-status-action .settle-btn {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.group-status-action .settle-btn:active {
+    background: #e2e8f0;
+}
+
+.group-status-action .reopen-btn {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.group-status-action .reopen-btn:active {
+    background: #bbf7d0;
+}
+
 /* ===== TABS ===== */
 .tab-bar {
     display: flex;
     background: #f1f5f9;
     border-radius: 30px;
     padding: 4px;
-    margin: 16px 0 12px;
+    margin: 12px 0 12px;
 }
 
 .tab-btn {

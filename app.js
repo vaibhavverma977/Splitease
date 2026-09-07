@@ -1,7 +1,7 @@
 // ============================
 //  SplitEase - app.js (v1)
 //  Offline-first expense splitting
-//  Full V1 with flexible splits & Overview chart
+//  Full V1 with Open/History system
 // ============================
 
 // ---- DATA LAYER ----
@@ -11,6 +11,7 @@ const STORAGE_KEY = 'splitEaseData';
 let groups = [];
 let currentGroupId = null;
 let editingExpenseId = null;
+let currentStatusFilter = 'open'; // 'open' or 'settled'
 
 // Load data from localStorage
 function loadData() {
@@ -20,6 +21,11 @@ function loadData() {
             const parsed = JSON.parse(stored);
             if (Array.isArray(parsed)) {
                 groups = parsed;
+                // Ensure each group has status and settledAt
+                groups.forEach(g => {
+                    if (!g.status) g.status = 'open';
+                    if (g.settledAt === undefined) g.settledAt = null;
+                });
                 return;
             }
         } catch (_) {}
@@ -39,6 +45,13 @@ function generateId() {
 function formatDate(dateStr) {
     if (!dateStr) return '';
     const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatDateTime(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
     if (isNaN(d)) return '';
     return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
@@ -71,15 +84,27 @@ function showGroupView(groupId) {
 function renderHome() {
     const container = document.getElementById('groups-list');
     const emptyState = document.getElementById('empty-state');
+    const emptyTitle = document.getElementById('empty-title');
+    const emptyDesc = document.getElementById('empty-desc');
     container.innerHTML = '';
 
-    if (groups.length === 0) {
+    // Filter groups by status
+    const filtered = groups.filter(g => (g.status || 'open') === currentStatusFilter);
+
+    if (filtered.length === 0) {
         emptyState.style.display = 'block';
+        if (currentStatusFilter === 'open') {
+            emptyTitle.textContent = 'No active trips yet';
+            emptyDesc.textContent = 'Create your first group to start splitting expenses.';
+        } else {
+            emptyTitle.textContent = 'No completed trips yet';
+            emptyDesc.textContent = 'Settled trips will appear here.';
+        }
         return;
     }
     emptyState.style.display = 'none';
 
-    groups.forEach(group => {
+    filtered.forEach(group => {
         const card = document.createElement('div');
         card.className = 'group-card';
         card.dataset.id = group.id;
@@ -93,7 +118,21 @@ function renderHome() {
         metaSpan.className = 'group-card-meta';
         const memberCount = group.members ? group.members.length : 0;
         const expenseCount = group.expenses ? group.expenses.length : 0;
-        metaSpan.textContent = `${memberCount} members · ${expenseCount} expenses`;
+        let totalSpent = 0;
+        if (group.expenses) {
+            group.expenses.forEach(e => totalSpent += e.amount);
+        }
+        let metaText = `${memberCount} members · ₹${totalSpent.toFixed(2)} spent`;
+        if (group.status === 'settled' && group.settledAt) {
+            metaText += ` · Settled ${formatDateTime(group.settledAt)}`;
+            const badge = document.createElement('span');
+            badge.className = 'settled-badge';
+            badge.textContent = '✓ Settled';
+            metaSpan.appendChild(document.createTextNode(metaText));
+            metaSpan.appendChild(badge);
+        } else {
+            metaSpan.textContent = metaText;
+        }
 
         info.appendChild(nameSpan);
         info.appendChild(metaSpan);
@@ -123,12 +162,60 @@ function renderGroup(groupId) {
     }
 
     document.getElementById('group-title').textContent = group.name;
+    renderGroupStatusAction(group);
     renderMembers(group);
     renderExpenses(group);
     renderOverview(group);
     renderBalances(group);
     populateExpenseModal(group);
     switchTab('members');
+}
+
+// ---- GROUP STATUS ACTION ----
+
+function renderGroupStatusAction(group) {
+    const container = document.getElementById('group-status-action');
+    container.innerHTML = '';
+
+    if (group.status === 'open') {
+        const btn = document.createElement('button');
+        btn.className = 'status-btn-action settle-btn';
+        btn.textContent = 'Mark Trip as Settled';
+        btn.addEventListener('click', () => {
+            if (confirm('Mark this trip as settled?\n\nThe trip will be moved to History and can be reopened later.')) {
+                markGroupSettled(group.id);
+            }
+        });
+        container.appendChild(btn);
+    } else {
+        const btn = document.createElement('button');
+        btn.className = 'status-btn-action reopen-btn';
+        btn.textContent = 'Reopen Trip';
+        btn.addEventListener('click', () => {
+            if (confirm('Reopen this settled trip?\n\nIt will be moved back to Open trips.')) {
+                reopenGroup(group.id);
+            }
+        });
+        container.appendChild(btn);
+    }
+}
+
+function markGroupSettled(groupId) {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+    group.status = 'settled';
+    group.settledAt = new Date().toISOString();
+    saveData();
+    showHomeView();
+}
+
+function reopenGroup(groupId) {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+    group.status = 'open';
+    group.settledAt = null;
+    saveData();
+    showHomeView();
 }
 
 // ---- MEMBERS TAB ----
@@ -555,7 +642,7 @@ function renderOverview(group) {
         startAngle = endAngle;
     });
 
-    // Add a small white circle in the center for donut effect (optional)
+    // Add a small white circle in the center for donut effect
     const centerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     centerCircle.setAttribute('cx', '50');
     centerCircle.setAttribute('cy', '50');
@@ -695,7 +782,6 @@ function renderBalances(group) {
 // ---- CALCULATION FUNCTIONS ----
 
 function calculateExpenseShares(expense) {
-    // Returns an object { member: share }
     const amount = expense.amount;
     const splitType = expense.splitType || 'equal';
     let shares = {};
@@ -709,7 +795,6 @@ function calculateExpenseShares(expense) {
         });
     } else if (splitType === 'percentage' || splitType === 'custom') {
         shares = expense.splits || {};
-        // Ensure amounts are numbers
         Object.keys(shares).forEach(key => {
             shares[key] = Number(shares[key]);
         });
@@ -733,12 +818,10 @@ function calculateBalances(group) {
         const payer = exp.payer;
         const shares = calculateExpenseShares(exp);
 
-        // Add full amount to payer
         if (balances[payer]) {
             balances[payer].paid += amount;
         }
 
-        // Add shares
         Object.keys(shares).forEach(person => {
             if (balances[person]) {
                 balances[person].share += shares[person];
@@ -901,7 +984,6 @@ function renderSplitInputs(group, expenseData) {
         input.min = '0';
         input.placeholder = splitType === 'percentage' ? '%' : '₹';
 
-        // Pre-fill
         if (expenseData && splits[member] !== undefined) {
             input.value = splits[member];
         } else if (splitType === 'percentage') {
@@ -928,7 +1010,6 @@ function renderSplitInputs(group, expenseData) {
 
     validateSplitInputs();
 
-    // Re-validate on amount change for custom/percentage
     amountInput.addEventListener('input', validateSplitInputs);
 }
 
@@ -1040,7 +1121,6 @@ function switchTab(tabName) {
     const activePanel = document.getElementById(`tab-${tabName}`);
     if (activePanel) activePanel.classList.add('active');
 
-    // If overview tab, re-render to update chart
     if (tabName === 'overview') {
         const group = groups.find(g => g.id === currentGroupId);
         if (group) renderOverview(group);
@@ -1051,6 +1131,24 @@ function switchTab(tabName) {
 
 function init() {
     loadData();
+
+    // --- Status toggle ---
+    const openBtn = document.getElementById('status-open');
+    const historyBtn = document.getElementById('status-history');
+    if (openBtn && historyBtn) {
+        openBtn.addEventListener('click', () => {
+            openBtn.classList.add('active');
+            historyBtn.classList.remove('active');
+            currentStatusFilter = 'open';
+            renderHome();
+        });
+        historyBtn.addEventListener('click', () => {
+            historyBtn.classList.add('active');
+            openBtn.classList.remove('active');
+            currentStatusFilter = 'settled';
+            renderHome();
+        });
+    }
 
     // --- Home: create group ---
     const createGroupBtn = document.getElementById('btn-create-group');
@@ -1083,7 +1181,9 @@ function init() {
                 id: generateId(),
                 name: name,
                 members: [],
-                expenses: []
+                expenses: [],
+                status: 'open',
+                settledAt: null
             };
             groups.push(newGroup);
             saveData();
@@ -1173,7 +1273,7 @@ function init() {
         });
     }
 
-    // --- Confirm expense (add or update) ---
+    // --- Confirm expense ---
     const confirmExpenseBtn = document.getElementById('btn-confirm-expense');
     if (confirmExpenseBtn) {
         confirmExpenseBtn.addEventListener('click', addExpense);

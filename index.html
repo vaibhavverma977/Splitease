@@ -21,14 +21,20 @@
                 <span class="header-sub">share fairly</span>
             </header>
 
+            <!-- Status Toggle -->
+            <div class="status-toggle-bar">
+                <button id="status-open" class="status-btn active" data-status="open">OPEN</button>
+                <button id="status-history" class="status-btn" data-status="settled">HISTORY</button>
+            </div>
+
             <div class="home-content">
                 <div id="groups-list" class="groups-list">
                     <!-- Groups rendered here by JS -->
                 </div>
                 <div id="empty-state" class="empty-state">
                     <div class="empty-icon">📂</div>
-                    <h3>No groups yet</h3>
-                    <p>Create your first group to start splitting expenses.</p>
+                    <h3 id="empty-title">No active trips yet</h3>
+                    <p id="empty-desc">Create your first group to start splitting expenses.</p>
                 </div>
             </div>
 
@@ -51,6 +57,11 @@
                     <span class="delete-icon">✕</span>
                 </button>
             </header>
+
+            <!-- Group Status Action -->
+            <div id="group-status-action" class="group-status-action">
+                <!-- Rendered by JS: "Mark Trip as Settled" or "Reopen Trip" -->
+            </div>
 
             <!-- Tab Bar -->
             <div class="tab-bar">
