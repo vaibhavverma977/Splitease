@@ -1,7 +1,7 @@
 // ============================
 //  SplitEase - app.js (v1)
 //  Offline-first expense splitting
-//  Full V1 with Open/History system
+//  Full V1 with Open/History & payment tracking
 // ============================
 
 // ---- DATA LAYER ----
@@ -21,10 +21,11 @@ function loadData() {
             const parsed = JSON.parse(stored);
             if (Array.isArray(parsed)) {
                 groups = parsed;
-                // Ensure each group has status and settledAt
+                // Ensure each group has required properties
                 groups.forEach(g => {
                     if (!g.status) g.status = 'open';
                     if (g.settledAt === undefined) g.settledAt = null;
+                    if (!g.paymentStatus) g.paymentStatus = {}; // new: payment tracking
                 });
                 return;
             }
@@ -763,20 +764,80 @@ function renderBalances(group) {
         msg.textContent = 'All settled! 🎉';
         settlementContainer.appendChild(msg);
     } else {
-        settlement.forEach(s => {
+        // Ensure paymentStatus exists
+        if (!group.paymentStatus) group.paymentStatus = {};
+
+        settlement.forEach((s, index) => {
+            // Generate a stable key for this settlement
+            const key = `settlement_${s.from}_${s.to}_${s.amount.toFixed(2)}`;
+            // Check if already paid
+            const isPaid = group.paymentStatus[key] === true;
+
             const item = document.createElement('div');
             item.className = 'settlement-item';
-            const fromTo = document.createElement('span');
-            fromTo.className = 'from-to';
-            fromTo.textContent = `${s.from} pays ${s.to}`;
+
+            const left = document.createElement('span');
+            left.className = 'from-to';
+            left.textContent = `${s.from} pays ${s.to}`;
+
+            const right = document.createElement('span');
+            right.style.display = 'flex';
+            right.style.alignItems = 'center';
+            right.style.gap = '12px';
+
             const amountSpan = document.createElement('span');
             amountSpan.className = 'amount';
             amountSpan.textContent = `₹${s.amount.toFixed(2)}`;
-            item.appendChild(fromTo);
-            item.appendChild(amountSpan);
+
+            const statusDiv = document.createElement('span');
+            statusDiv.className = 'payment-status';
+
+            if (isPaid) {
+                const badge = document.createElement('span');
+                badge.className = 'paid-badge';
+                badge.textContent = '✓ Paid';
+                statusDiv.appendChild(badge);
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'paid-toggle';
+                toggleBtn.textContent = 'Unmark';
+                toggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePayment(group.id, key);
+                });
+                statusDiv.appendChild(toggleBtn);
+            } else {
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'paid-toggle unpaid';
+                toggleBtn.textContent = 'Mark as Paid';
+                toggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePayment(group.id, key);
+                });
+                statusDiv.appendChild(toggleBtn);
+            }
+
+            right.appendChild(amountSpan);
+            right.appendChild(statusDiv);
+
+            item.appendChild(left);
+            item.appendChild(right);
             settlementContainer.appendChild(item);
         });
     }
+}
+
+// ---- TOGGLE PAYMENT STATUS ----
+
+function togglePayment(groupId, key) {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+    if (!group.paymentStatus) group.paymentStatus = {};
+
+    // Toggle the payment status
+    group.paymentStatus[key] = !group.paymentStatus[key];
+    saveData();
+    renderGroup(groupId);
 }
 
 // ---- CALCULATION FUNCTIONS ----
@@ -1183,7 +1244,8 @@ function init() {
                 members: [],
                 expenses: [],
                 status: 'open',
-                settledAt: null
+                settledAt: null,
+                paymentStatus: {}
             };
             groups.push(newGroup);
             saveData();

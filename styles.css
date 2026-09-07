@@ -745,6 +745,7 @@ body {
 .settlement-item {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     padding: 8px 4px;
     border-bottom: 1px solid #e2e8f0;
     font-size: 14px;
@@ -761,6 +762,36 @@ body {
 .settlement-item .amount {
     font-weight: 500;
     color: #0f172a;
+}
+
+.settlement-item .payment-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.settlement-item .payment-status .paid-badge {
+    color: #16a34a;
+    font-weight: 500;
+}
+
+.settlement-item .payment-status .paid-toggle {
+    background: none;
+    border: none;
+    color: #4f46e5;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 16px;
+    transition: background 0.1s;
+}
+
+.settlement-item .payment-status .paid-toggle:active {
+    background: #eef2ff;
+}
+
+.settlement-item .payment-status .paid-toggle.unpaid {
+    color: #94a3b8;
 }
 
 /* ===== MODALS ===== */
@@ -1001,5 +1032,9 @@ body {
     .pie-chart {
         width: 160px;
         height: 160px;
+    }
+    .settlement-item {
+        flex-wrap: wrap;
+        gap: 4px;
     }
 }
