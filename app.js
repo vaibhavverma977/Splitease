@@ -49,14 +49,10 @@ function loadData() {
                     if (g.expenses) {
                         g.expenses.forEach(exp => {
                             if (!exp.payers && exp.payer) {
-                                // Convert single payer to payers array
                                 const amt = exp.originalAmount || exp.amount;
                                 exp.payers = [{ member: exp.payer, amount: amt }];
-                                // Remove old payer field to avoid confusion, but keep for backward compatibility if needed
-                                // We'll keep it but ignore if payers exists.
                             }
                             if (!exp.payers) {
-                                // Fallback: if no payers and no payer, set empty array? but shouldn't happen.
                                 exp.payers = [];
                             }
                         });
@@ -321,6 +317,8 @@ function addMember() {
     group.members.push(name);
     saveData();
     renderGroup(currentGroupId);
+
+    // --- FIX: Clear input after successful addition ---
     input.value = '';
 }
 
@@ -329,7 +327,6 @@ function removeMember(groupId, memberName) {
     if (!group) return;
 
     const isUsed = group.expenses.some(exp => {
-        // Check if member appears in payers or splits
         if (exp.payers && exp.payers.some(p => p.member === memberName)) return true;
         if (exp.payer === memberName) return true;
         if (exp.splitType === 'equal') {
@@ -382,7 +379,6 @@ function renderExpenses(group) {
 
         const details = document.createElement('div');
         details.className = 'expense-details';
-        // Show payers summary
         let payerStr = '';
         if (exp.payers && exp.payers.length > 0) {
             const payerNames = exp.payers.map(p => p.member).join(', ');
@@ -467,13 +463,11 @@ function openEditExpenseModal(groupId, expenseId) {
     document.getElementById('expense-modal-title').textContent = 'Edit Expense';
     document.getElementById('btn-confirm-expense').textContent = 'Update Expense';
 
-    // Fill fields
     document.getElementById('input-expense-desc').value = expense.description || '';
     document.getElementById('input-expense-amount').value = expense.originalAmount || expense.amount || '';
     document.getElementById('input-expense-date').value = expense.date || getToday();
     document.getElementById('input-expense-notes').value = expense.notes || '';
 
-    // Currency
     const currencySelect = document.getElementById('input-expense-currency');
     const expCurrency = expense.originalCurrency || 'INR';
     currencySelect.value = expCurrency;
@@ -486,25 +480,20 @@ function openEditExpenseModal(groupId, expenseId) {
         document.getElementById('exchange-rate-group').style.display = 'none';
     }
 
-    // Populate payers
     const payers = expense.payers || (expense.payer ? [{ member: expense.payer, amount: expense.originalAmount || expense.amount }] : []);
     renderPayerRows(group, payers);
 
-    // Included checkboxes
     const includedMembers = expense.included || [];
     const checkboxes = document.querySelectorAll('#expense-included-list input[type="checkbox"]');
     checkboxes.forEach(cb => {
         cb.checked = includedMembers.includes(cb.value);
     });
 
-    // Split type
     const splitType = expense.splitType || 'equal';
     document.getElementById('input-split-type').value = splitType;
 
-    // Render split inputs based on split type and data
     renderSplitInputs(group, expense);
 
-    // Show the modal
     openModal('modal-add-expense');
 }
 
@@ -515,7 +504,6 @@ function renderPayerRows(group, existingPayers) {
     container.innerHTML = '';
     const members = group.members || [];
 
-    // If no existing payers, create one default row
     if (!existingPayers || existingPayers.length === 0) {
         existingPayers = [{ member: members.length > 0 ? members[0] : '', amount: '' }];
     }
@@ -537,7 +525,6 @@ function renderPayerRows(group, existingPayers) {
             if (m === payer.member) opt.selected = true;
             select.appendChild(opt);
         });
-        // Disable already selected members in other rows
         select.addEventListener('change', () => {
             updatePayerRows(group);
         });
@@ -572,13 +559,11 @@ function renderPayerRows(group, existingPayers) {
         container.appendChild(row);
     });
 
-    // Update select options to prevent duplicates
     updatePayerRows(group);
     updatePayerSummary(group);
 }
 
 function updatePayerRows(group) {
-    // Update each select to exclude members already used in other rows
     const rows = document.querySelectorAll('.payer-row');
     const selectedMembers = [];
     rows.forEach(row => {
@@ -590,14 +575,12 @@ function updatePayerRows(group) {
     rows.forEach(row => {
         const select = row.querySelector('select');
         const currentVal = select.value;
-        // Keep options
         const options = select.querySelectorAll('option');
         options.forEach(opt => {
             if (opt.value === '') {
                 opt.disabled = false;
                 return;
             }
-            // Disable if selected in another row and not the current row's value
             if (selectedMembers.filter(v => v === opt.value).length > 1 && opt.value !== currentVal) {
                 opt.disabled = true;
             } else {
@@ -643,7 +626,6 @@ function updatePayerSummary(group) {
                 <span class="value">${formatCurrency(remaining, currency)}</span>
             </div>
         `;
-        // Show validation message in split-error if not matching
         const errorEl = document.getElementById('split-error');
         if (Math.abs(remaining) > 0.001) {
             errorEl.textContent = `Payer amounts must equal the expense total (${formatCurrency(totalExpense, currency)}).`;
@@ -682,7 +664,6 @@ function addExpense() {
         if (cb.checked) included.push(cb.value);
     });
 
-    // Basic validations
     if (!description) {
         errorEl.textContent = 'Please enter a description.';
         errorEl.classList.remove('hidden');
@@ -721,7 +702,6 @@ function addExpense() {
         originalCurrency = currency;
     }
 
-    // Read payer rows
     const payerRows = document.querySelectorAll('.payer-row');
     const payers = [];
     let payerTotal = 0;
@@ -736,7 +716,6 @@ function addExpense() {
         }
     });
 
-    // Validate payer total equals expense amount
     if (Math.abs(payerTotal - amount) > 0.001) {
         errorEl.textContent = `Payer amounts (${formatCurrency(payerTotal, currency)}) must equal the expense total (${formatCurrency(amount, currency)}).`;
         errorEl.classList.remove('hidden');
@@ -749,7 +728,6 @@ function addExpense() {
         return;
     }
 
-    // Build expense object
     let expenseData = {
         description,
         amount: baseAmount,
@@ -763,11 +741,9 @@ function addExpense() {
         payers: payers.map(p => ({ member: p.member, amount: p.amount }))
     };
 
-    // Handle split type
     if (splitType === 'equal') {
         expenseData.included = included;
     } else {
-        // Read split inputs
         const splitInputs = document.querySelectorAll('.split-input-row');
         const splits = {};
         let total = 0;
@@ -806,8 +782,6 @@ function addExpense() {
             }
             expenseData.splits = splits;
         } else if (splitType === 'custom') {
-            // Custom amounts are in the original currency? Actually we use the same as split inputs: they are in expense currency.
-            // But we need to validate against originalAmount.
             if (Math.abs(total - originalAmount) > 0.001) {
                 errorEl.textContent = `Total custom amounts (${formatCurrency(total, currency)}) must equal expense amount (${formatCurrency(originalAmount, currency)}).`;
                 errorEl.classList.remove('hidden');
@@ -1188,17 +1162,15 @@ function calculateBalances(group) {
     if (!group.expenses) return balances;
 
     group.expenses.forEach(exp => {
-        // Calculate total paid per member from payers
         const payers = exp.payers || [];
         payers.forEach(p => {
             const member = p.member;
-            const amt = p.amount * (exp.exchangeRate || 1); // Convert to base currency
+            const amt = p.amount * (exp.exchangeRate || 1);
             if (balances[member]) {
                 balances[member].paid += amt;
             }
         });
 
-        // Calculate shares (using existing logic)
         const shares = calculateExpenseShares(exp);
         Object.keys(shares).forEach(person => {
             if (balances[person]) {
@@ -1294,7 +1266,6 @@ function updateConvertedAmountDisplay(baseCurrency, expCurrency) {
 // ---- POPULATE EXPENSE MODAL (for new expense) ----
 
 function populateExpenseModal(group) {
-    // Included people checkboxes
     const includedContainer = document.getElementById('expense-included-list');
     includedContainer.innerHTML = '';
 
@@ -1324,7 +1295,6 @@ function populateExpenseModal(group) {
     document.getElementById('input-expense-date').value = getToday();
     document.getElementById('input-split-type').value = 'equal';
 
-    // Currency defaults
     const baseCurrency = group.baseCurrency || 'INR';
     const currencySelect = document.getElementById('input-expense-currency');
     currencySelect.value = baseCurrency;
@@ -1332,7 +1302,6 @@ function populateExpenseModal(group) {
     document.getElementById('converted-amount-display').textContent = '';
     document.getElementById('base-currency-label').textContent = baseCurrency;
 
-    // Initialize payers with one row
     const firstMember = members.length > 0 ? members[0] : '';
     renderPayerRows(group, [{ member: firstMember, amount: '' }]);
 
@@ -1578,316 +1547,321 @@ function switchTab(tabName) {
 // ---- EVENT BINDING ----
 
 function init() {
-    loadData();
+    try {
+        loadData();
 
-    // --- Status toggle ---
-    const openBtn = document.getElementById('status-open');
-    const historyBtn = document.getElementById('status-history');
-    if (openBtn && historyBtn) {
-        openBtn.addEventListener('click', () => {
-            openBtn.classList.add('active');
-            historyBtn.classList.remove('active');
-            currentStatusFilter = 'open';
-            renderHome();
-        });
-        historyBtn.addEventListener('click', () => {
-            historyBtn.classList.add('active');
-            openBtn.classList.remove('active');
-            currentStatusFilter = 'settled';
-            renderHome();
-        });
-    }
+        // --- Status toggle ---
+        const openBtn = document.getElementById('status-open');
+        const historyBtn = document.getElementById('status-history');
+        if (openBtn && historyBtn) {
+            openBtn.addEventListener('click', () => {
+                openBtn.classList.add('active');
+                historyBtn.classList.remove('active');
+                currentStatusFilter = 'open';
+                renderHome();
+            });
+            historyBtn.addEventListener('click', () => {
+                historyBtn.classList.add('active');
+                openBtn.classList.remove('active');
+                currentStatusFilter = 'settled';
+                renderHome();
+            });
+        }
 
-    // --- Home: create group ---
-    const createGroupBtn = document.getElementById('btn-create-group');
-    if (createGroupBtn) {
-        createGroupBtn.addEventListener('click', () => {
-            openModal('modal-create-group');
-            document.getElementById('input-group-name').value = '';
-            document.getElementById('group-name-error').classList.add('hidden');
-        });
-    }
+        // --- Home: create group ---
+        const createGroupBtn = document.getElementById('btn-create-group');
+        if (createGroupBtn) {
+            createGroupBtn.addEventListener('click', () => {
+                openModal('modal-create-group');
+                document.getElementById('input-group-name').value = '';
+                document.getElementById('group-name-error').classList.add('hidden');
+            });
+        }
 
-    const confirmGroupBtn = document.getElementById('btn-confirm-group');
-    if (confirmGroupBtn) {
-        confirmGroupBtn.addEventListener('click', () => {
-            const input = document.getElementById('input-group-name');
-            const name = input.value.trim();
-            const errorEl = document.getElementById('group-name-error');
-            if (!name) {
-                errorEl.textContent = 'Please enter a group name.';
-                errorEl.classList.remove('hidden');
-                return;
-            }
-            if (groups.some(g => g.name.toLowerCase() === name.toLowerCase())) {
-                errorEl.textContent = 'A group with this name already exists.';
-                errorEl.classList.remove('hidden');
-                return;
-            }
-            errorEl.classList.add('hidden');
-            const newGroup = {
-                id: generateId(),
-                name: name,
-                members: [],
-                expenses: [],
-                status: 'open',
-                settledAt: null,
-                paymentStatus: {},
-                baseCurrency: 'INR'
-            };
-            groups.push(newGroup);
-            saveData();
-            closeModal('modal-create-group');
-            renderHome();
-        });
-    }
-
-    // --- Back to home ---
-    const backBtn = document.getElementById('btn-back');
-    if (backBtn) {
-        backBtn.addEventListener('click', () => {
-            showHomeView();
-        });
-    }
-
-    // --- Rename group ---
-    const renameBtn = document.getElementById('btn-rename-group');
-    if (renameBtn) {
-        renameBtn.addEventListener('click', () => {
-            const group = groups.find(g => g.id === currentGroupId);
-            if (!group) return;
-            const newName = prompt('Enter new group name:', group.name);
-            if (newName === null) return;
-            const trimmed = newName.trim();
-            if (!trimmed) {
-                alert('Group name cannot be empty.');
-                return;
-            }
-            if (groups.some(g => g.id !== currentGroupId && g.name.toLowerCase() === trimmed.toLowerCase())) {
-                alert('A group with this name already exists.');
-                return;
-            }
-            group.name = trimmed;
-            saveData();
-            renderGroup(currentGroupId);
-        });
-    }
-
-    // --- Change base currency ---
-    const currencyBtn = document.getElementById('btn-change-currency');
-    if (currencyBtn) {
-        currencyBtn.addEventListener('click', () => {
-            const group = groups.find(g => g.id === currentGroupId);
-            if (!group) return;
-
-            if (group.expenses && group.expenses.length > 0) {
-                alert('Base currency can\'t be changed after expenses have been added.');
-                return;
-            }
-
-            const currencyCodes = Object.keys(CURRENCIES);
-            const current = group.baseCurrency || 'INR';
-            const msg = `Current base currency: ${current} (${CURRENCIES[current].name})\n\nSelect new base currency:\n${currencyCodes.join(', ')}`;
-            const newCode = prompt(msg, current);
-            if (newCode === null) return;
-            const trimmedCode = newCode.trim().toUpperCase();
-            if (!CURRENCIES[trimmedCode]) {
-                alert('Invalid currency code. Please use one of: ' + currencyCodes.join(', '));
-                return;
-            }
-            group.baseCurrency = trimmedCode;
-            saveData();
-            renderGroup(currentGroupId);
-        });
-    }
-
-    // --- Delete group ---
-    const deleteGroupBtn = document.getElementById('btn-delete-group');
-    if (deleteGroupBtn) {
-        deleteGroupBtn.addEventListener('click', () => {
-            if (!currentGroupId) return;
-            if (confirm('Delete this group and all its data?')) {
-                groups = groups.filter(g => g.id !== currentGroupId);
-                saveData();
-                showHomeView();
-            }
-        });
-    }
-
-    // --- Add member ---
-    const addMemberBtn = document.getElementById('btn-add-member');
-    if (addMemberBtn) {
-        addMemberBtn.addEventListener('click', addMember);
-    }
-    const memberInput = document.getElementById('input-member-name');
-    if (memberInput) {
-        memberInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') addMember();
-        });
-    }
-
-    // --- Add expense: open modal ---
-    const addExpenseBtn = document.getElementById('btn-add-expense');
-    if (addExpenseBtn) {
-        addExpenseBtn.addEventListener('click', () => {
-            const group = groups.find(g => g.id === currentGroupId);
-            if (!group) return;
-            if (!group.members || group.members.length === 0) {
-                alert('Please add members first.');
-                return;
-            }
-            editingExpenseId = null;
-            document.getElementById('expense-modal-title').textContent = 'Add Expense';
-            document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
-            populateExpenseModal(group);
-            document.getElementById('input-expense-desc').value = '';
-            document.getElementById('input-expense-amount').value = '';
-            document.getElementById('input-expense-notes').value = '';
-            document.getElementById('split-error').classList.add('hidden');
-            document.getElementById('split-info').classList.add('hidden');
-            document.getElementById('input-split-type').value = 'equal';
-            document.getElementById('exchange-rate-group').style.display = 'none';
-            document.getElementById('converted-amount-display').textContent = '';
-            renderSplitInputs(group, null);
-            openModal('modal-add-expense');
-        });
-    }
-
-    // --- Confirm expense ---
-    const confirmExpenseBtn = document.getElementById('btn-confirm-expense');
-    if (confirmExpenseBtn) {
-        confirmExpenseBtn.addEventListener('click', addExpense);
-    }
-
-    // --- Split type change ---
-    const splitTypeSelect = document.getElementById('input-split-type');
-    if (splitTypeSelect) {
-        splitTypeSelect.addEventListener('change', () => {
-            document.getElementById('split-error').classList.add('hidden');
-            document.getElementById('split-info').classList.add('hidden');
-            const group = groups.find(g => g.id === currentGroupId);
-            if (group) {
-                let expenseData = null;
-                if (editingExpenseId) {
-                    const exp = group.expenses.find(e => e.id === editingExpenseId);
-                    if (exp) expenseData = exp;
+        const confirmGroupBtn = document.getElementById('btn-confirm-group');
+        if (confirmGroupBtn) {
+            confirmGroupBtn.addEventListener('click', () => {
+                const input = document.getElementById('input-group-name');
+                const name = input.value.trim();
+                const errorEl = document.getElementById('group-name-error');
+                if (!name) {
+                    errorEl.textContent = 'Please enter a group name.';
+                    errorEl.classList.remove('hidden');
+                    return;
                 }
-                renderSplitInputs(group, expenseData);
-            }
-        });
-    }
+                if (groups.some(g => g.name.toLowerCase() === name.toLowerCase())) {
+                    errorEl.textContent = 'A group with this name already exists.';
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+                errorEl.classList.add('hidden');
+                const newGroup = {
+                    id: generateId(),
+                    name: name,
+                    members: [],
+                    expenses: [],
+                    status: 'open',
+                    settledAt: null,
+                    paymentStatus: {},
+                    baseCurrency: 'INR'
+                };
+                groups.push(newGroup);
+                saveData();
+                closeModal('modal-create-group');
+                renderHome();
+            });
+        }
 
-    // --- Currency change in modal ---
-    const currencySelect = document.getElementById('input-expense-currency');
-    if (currencySelect) {
-        currencySelect.addEventListener('change', () => {
-            const group = groups.find(g => g.id === currentGroupId);
-            if (!group) return;
-            const baseCurrency = group.baseCurrency || 'INR';
-            const expCurrency = currencySelect.value;
-            if (expCurrency === baseCurrency) {
-                document.getElementById('exchange-rate-group').style.display = 'none';
-                document.getElementById('converted-amount-display').textContent = '';
-            } else {
-                document.getElementById('exchange-rate-group').style.display = 'block';
-                document.getElementById('base-currency-label').textContent = baseCurrency;
-                document.getElementById('exp-currency-label').textContent = expCurrency;
-                updateConvertedAmountDisplay(baseCurrency, expCurrency);
-            }
-            const groupObj = groups.find(g => g.id === currentGroupId);
-            validateSplitInputs(groupObj);
-            updatePayerSummary(groupObj);
-        });
-    }
+        // --- Back to home ---
+        const backBtn = document.getElementById('btn-back');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                showHomeView();
+            });
+        }
 
-    // --- Exchange rate input ---
-    const rateInput = document.getElementById('input-exchange-rate');
-    if (rateInput) {
-        rateInput.addEventListener('input', () => {
-            const group = groups.find(g => g.id === currentGroupId);
-            if (!group) return;
-            const baseCurrency = group.baseCurrency || 'INR';
-            const expCurrency = document.getElementById('input-expense-currency').value;
-            if (expCurrency !== baseCurrency) {
-                updateConvertedAmountDisplay(baseCurrency, expCurrency);
-            }
-            const splitType = document.getElementById('input-split-type').value;
-            if (splitType === 'custom') {
-                validateSplitInputs(group);
-            }
-            updatePayerSummary(group);
-        });
-    }
+        // --- Rename group ---
+        const renameBtn = document.getElementById('btn-rename-group');
+        if (renameBtn) {
+            renameBtn.addEventListener('click', () => {
+                const group = groups.find(g => g.id === currentGroupId);
+                if (!group) return;
+                const newName = prompt('Enter new group name:', group.name);
+                if (newName === null) return;
+                const trimmed = newName.trim();
+                if (!trimmed) {
+                    alert('Group name cannot be empty.');
+                    return;
+                }
+                if (groups.some(g => g.id !== currentGroupId && g.name.toLowerCase() === trimmed.toLowerCase())) {
+                    alert('A group with this name already exists.');
+                    return;
+                }
+                group.name = trimmed;
+                saveData();
+                renderGroup(currentGroupId);
+            });
+        }
 
-    // --- Amount input changes trigger validation ---
-    const amountInput = document.getElementById('input-expense-amount');
-    if (amountInput) {
-        amountInput.addEventListener('input', () => {
-            const group = groups.find(g => g.id === currentGroupId);
-            if (!group) return;
-            const splitType = document.getElementById('input-split-type').value;
-            const expCurrency = document.getElementById('input-expense-currency').value;
-            const baseCurrency = group.baseCurrency || 'INR';
-            if (expCurrency !== baseCurrency) {
-                updateConvertedAmountDisplay(baseCurrency, expCurrency);
-            }
-            validateSplitInputs(group);
-            updatePayerSummary(group);
-        });
-    }
+        // --- Change base currency ---
+        const currencyBtn = document.getElementById('btn-change-currency');
+        if (currencyBtn) {
+            currencyBtn.addEventListener('click', () => {
+                const group = groups.find(g => g.id === currentGroupId);
+                if (!group) return;
 
-    // --- Add payer button ---
-    document.getElementById('btn-add-payer').addEventListener('click', () => {
-        const group = groups.find(g => g.id === currentGroupId);
-        if (!group) return;
-        // Get existing payers
-        const rows = document.querySelectorAll('.payer-row');
-        const existingPayers = [];
-        rows.forEach(row => {
-            const select = row.querySelector('select');
-            const input = row.querySelector('input');
-            const member = select.value;
-            const amt = parseFloat(input.value) || 0;
-            if (member) {
-                existingPayers.push({ member, amount: amt });
-            }
-        });
-        // Add a new empty payer row
-        existingPayers.push({ member: '', amount: '' });
-        renderPayerRows(group, existingPayers);
-    });
+                if (group.expenses && group.expenses.length > 0) {
+                    alert('Base currency can\'t be changed after expenses have been added.');
+                    return;
+                }
 
-    // --- Modal close buttons ---
-    document.querySelectorAll('.modal-close').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const modalId = btn.dataset.close;
-            if (modalId) closeModal(modalId);
-        });
-    });
+                const currencyCodes = Object.keys(CURRENCIES);
+                const current = group.baseCurrency || 'INR';
+                const msg = `Current base currency: ${current} (${CURRENCIES[current].name})\n\nSelect new base currency:\n${currencyCodes.join(', ')}`;
+                const newCode = prompt(msg, current);
+                if (newCode === null) return;
+                const trimmedCode = newCode.trim().toUpperCase();
+                if (!CURRENCIES[trimmedCode]) {
+                    alert('Invalid currency code. Please use one of: ' + currencyCodes.join(', '));
+                    return;
+                }
+                group.baseCurrency = trimmedCode;
+                saveData();
+                renderGroup(currentGroupId);
+            });
+        }
 
-    // Close modal on overlay click
-    document.querySelectorAll('.modal-overlay').forEach(overlay => {
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.classList.remove('open');
+        // --- Delete group ---
+        const deleteGroupBtn = document.getElementById('btn-delete-group');
+        if (deleteGroupBtn) {
+            deleteGroupBtn.addEventListener('click', () => {
+                if (!currentGroupId) return;
+                if (confirm('Delete this group and all its data?')) {
+                    groups = groups.filter(g => g.id !== currentGroupId);
+                    saveData();
+                    showHomeView();
+                }
+            });
+        }
+
+        // --- Add member ---
+        const addMemberBtn = document.getElementById('btn-add-member');
+        if (addMemberBtn) {
+            addMemberBtn.addEventListener('click', addMember);
+        }
+        const memberInput = document.getElementById('input-member-name');
+        if (memberInput) {
+            memberInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') addMember();
+            });
+        }
+
+        // --- Add expense: open modal ---
+        // FIX: Ensure the Add Expense button listener is attached
+        const addExpenseBtn = document.getElementById('btn-add-expense');
+        if (addExpenseBtn) {
+            addExpenseBtn.addEventListener('click', () => {
+                const group = groups.find(g => g.id === currentGroupId);
+                if (!group) return;
+                if (!group.members || group.members.length === 0) {
+                    alert('Please add members first.');
+                    return;
+                }
                 editingExpenseId = null;
                 document.getElementById('expense-modal-title').textContent = 'Add Expense';
                 document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
-            }
-        });
-    });
+                populateExpenseModal(group);
+                document.getElementById('input-expense-desc').value = '';
+                document.getElementById('input-expense-amount').value = '';
+                document.getElementById('input-expense-notes').value = '';
+                document.getElementById('split-error').classList.add('hidden');
+                document.getElementById('split-info').classList.add('hidden');
+                document.getElementById('input-split-type').value = 'equal';
+                document.getElementById('exchange-rate-group').style.display = 'none';
+                document.getElementById('converted-amount-display').textContent = '';
+                renderSplitInputs(group, null);
+                openModal('modal-add-expense');
+            });
+        } else {
+            console.error('Add Expense button not found!');
+        }
 
-    // --- Tab switching ---
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tab = btn.dataset.tab;
-            if (tab) switchTab(tab);
-        });
-    });
+        // --- Confirm expense ---
+        const confirmExpenseBtn = document.getElementById('btn-confirm-expense');
+        if (confirmExpenseBtn) {
+            confirmExpenseBtn.addEventListener('click', addExpense);
+        }
 
-    // --- Initial render ---
-    renderHome();
+        // --- Split type change ---
+        const splitTypeSelect = document.getElementById('input-split-type');
+        if (splitTypeSelect) {
+            splitTypeSelect.addEventListener('change', () => {
+                document.getElementById('split-error').classList.add('hidden');
+                document.getElementById('split-info').classList.add('hidden');
+                const group = groups.find(g => g.id === currentGroupId);
+                if (group) {
+                    let expenseData = null;
+                    if (editingExpenseId) {
+                        const exp = group.expenses.find(e => e.id === editingExpenseId);
+                        if (exp) expenseData = exp;
+                    }
+                    renderSplitInputs(group, expenseData);
+                }
+            });
+        }
+
+        // --- Currency change in modal ---
+        const currencySelect = document.getElementById('input-expense-currency');
+        if (currencySelect) {
+            currencySelect.addEventListener('change', () => {
+                const group = groups.find(g => g.id === currentGroupId);
+                if (!group) return;
+                const baseCurrency = group.baseCurrency || 'INR';
+                const expCurrency = currencySelect.value;
+                if (expCurrency === baseCurrency) {
+                    document.getElementById('exchange-rate-group').style.display = 'none';
+                    document.getElementById('converted-amount-display').textContent = '';
+                } else {
+                    document.getElementById('exchange-rate-group').style.display = 'block';
+                    document.getElementById('base-currency-label').textContent = baseCurrency;
+                    document.getElementById('exp-currency-label').textContent = expCurrency;
+                    updateConvertedAmountDisplay(baseCurrency, expCurrency);
+                }
+                const groupObj = groups.find(g => g.id === currentGroupId);
+                validateSplitInputs(groupObj);
+                updatePayerSummary(groupObj);
+            });
+        }
+
+        // --- Exchange rate input ---
+        const rateInput = document.getElementById('input-exchange-rate');
+        if (rateInput) {
+            rateInput.addEventListener('input', () => {
+                const group = groups.find(g => g.id === currentGroupId);
+                if (!group) return;
+                const baseCurrency = group.baseCurrency || 'INR';
+                const expCurrency = document.getElementById('input-expense-currency').value;
+                if (expCurrency !== baseCurrency) {
+                    updateConvertedAmountDisplay(baseCurrency, expCurrency);
+                }
+                const splitType = document.getElementById('input-split-type').value;
+                if (splitType === 'custom') {
+                    validateSplitInputs(group);
+                }
+                updatePayerSummary(group);
+            });
+        }
+
+        // --- Amount input changes trigger validation ---
+        const amountInput = document.getElementById('input-expense-amount');
+        if (amountInput) {
+            amountInput.addEventListener('input', () => {
+                const group = groups.find(g => g.id === currentGroupId);
+                if (!group) return;
+                const splitType = document.getElementById('input-split-type').value;
+                const expCurrency = document.getElementById('input-expense-currency').value;
+                const baseCurrency = group.baseCurrency || 'INR';
+                if (expCurrency !== baseCurrency) {
+                    updateConvertedAmountDisplay(baseCurrency, expCurrency);
+                }
+                validateSplitInputs(group);
+                updatePayerSummary(group);
+            });
+        }
+
+        // --- Add payer button ---
+        document.getElementById('btn-add-payer').addEventListener('click', () => {
+            const group = groups.find(g => g.id === currentGroupId);
+            if (!group) return;
+            const rows = document.querySelectorAll('.payer-row');
+            const existingPayers = [];
+            rows.forEach(row => {
+                const select = row.querySelector('select');
+                const input = row.querySelector('input');
+                const member = select.value;
+                const amt = parseFloat(input.value) || 0;
+                if (member) {
+                    existingPayers.push({ member, amount: amt });
+                }
+            });
+            existingPayers.push({ member: '', amount: '' });
+            renderPayerRows(group, existingPayers);
+        });
+
+        // --- Modal close buttons ---
+        document.querySelectorAll('.modal-close').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const modalId = btn.dataset.close;
+                if (modalId) closeModal(modalId);
+            });
+        });
+
+        // Close modal on overlay click
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('open');
+                    editingExpenseId = null;
+                    document.getElementById('expense-modal-title').textContent = 'Add Expense';
+                    document.getElementById('btn-confirm-expense').textContent = 'Add Expense';
+                }
+            });
+        });
+
+        // --- Tab switching ---
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                if (tab) switchTab(tab);
+            });
+        });
+
+        // --- Initial render ---
+        renderHome();
+    } catch (e) {
+        console.error('Error in init():', e);
+    }
 }
 
 // ---- START ----
-document.addEventListener('DOMContentLoaded', init); 
+document.addEventListener('DOMContentLoaded', init);
